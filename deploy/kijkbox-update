@@ -170,7 +170,18 @@ check() {
 
 main() {
   exec 9>"$LOCK"
-  flock -n 9 || { log "er loopt al een update"; exit 0; }
+  if [ "${1:-}" = "request" ]; then
+    # Een verzoek van de website wacht tot een lopende update klaar is. Zou het meteen stoppen, dan
+    # bleef het verzoekbestand liggen en startte systemd dit steeds opnieuw, tot het werd uitgeschakeld.
+    # (Wordt intussen "nu installeren" gekozen, dan pakt de lopende update dat zelf op.)
+    if ! flock -w 25000 9; then
+      log "lopende update duurt te lang; verzoek vervalt"
+      rm -f "$REQUEST"
+      exit 0
+    fi
+  else
+    flock -n 9 || { log "er loopt al een update"; exit 0; }
+  fi
   case "${1:-status}" in
     check) write_status checking "" "" ""; check auto ;;
     install) install_latest ;;
