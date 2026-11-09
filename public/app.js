@@ -2516,6 +2516,21 @@ function updatesPanel() {
     }
   }
 
+  /** Installeren. Kijkt er iemand, dan eerst vragen of het toch nu mag. */
+  async function install({ now = false } = {}) {
+    let fresh;
+    try {
+      fresh = await api('GET', '/api/update');
+    } catch (err) {
+      return toast(err.message);
+    }
+    const watching = fresh.watching ?? [];
+    if (!watching.length) return act({ action: 'install' });
+    const choice = await askWatching(watching, now);
+    if (choice === 'now') act({ action: 'install-now' });
+    else if (choice === 'wait' && !now) act({ action: 'install' });
+  }
+
   function show(s) {
     clearTimeout(timer);
     if (!body.isConnected && timer) return;
@@ -2534,7 +2549,8 @@ function updatesPanel() {
         h('pre', { class: 'update-notes' }, s.whatsNew.notes)),
       s.managed && (states[s.state] || s.pending) && h('p', { class: s.state === 'error' ? 'error small' : 'muted small' }, states[s.state] ?? 'Verzoek verstuurd…'),
       s.managed && h('div', { class: 'actions' },
-        newer && h('button', { class: 'btn primary', disabled: s.pending || s.state === 'waiting' || s.state === 'installing', onclick: () => act({ action: 'install' }) }, 'Update installeren'),
+        newer && h('button', { class: 'btn primary', disabled: s.pending || s.state === 'waiting' || s.state === 'installing', onclick: () => install() }, 'Update installeren'),
+        newer && s.state === 'waiting' && h('button', { class: 'btn', onclick: () => install({ now: true }) }, 'Toch nu installeren'),
         h('button', { class: 'btn', disabled: s.pending, onclick: () => act({ action: 'check' }) }, 'Nu controleren')),
       s.managed && h('label', { class: 'check' },
         h('input', { type: 'checkbox', checked: s.auto, onchange: (e) => act({ auto: e.target.checked }) }),
@@ -2546,6 +2562,37 @@ function updatesPanel() {
   const load = () => api('GET', '/api/update').then(show).catch((err) => body.replaceChildren(h('p', { class: 'error small' }, err.message)));
   load();
   return h('section', { class: 'panel' }, h('h2', { style: 'margin-bottom:6px' }, 'Updates'), body);
+}
+
+/**
+ * Melding als er iemand kijkt terwijl de beheerder wil updaten. Geeft 'now', 'wait' of null.
+ * `waiting`: de update wacht al tot niemand kijkt; dan zijn er alleen "nu" en "annuleren".
+ */
+function askWatching(watching, waiting = false) {
+  return new Promise((resolve) => {
+    const close = (value) => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(value);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') close(null); };
+    const list = watching.map((p) => h('li', {},
+      h('b', {}, clean(p.name)),
+      p.watchers.length ? ` · ${p.watchers.map((w) => `${w.user} (${w.device})`).join(', ')}` : ''));
+    const now = h('button', { class: 'btn danger', onclick: () => close('now') }, 'Toch nu installeren');
+    const overlay = h('div', { class: 'modal-backdrop', onclick: (e) => { if (e.target === overlay) close(null); } },
+      h('div', { class: 'modal', role: 'alertdialog', 'aria-modal': 'true', 'aria-labelledby': 'watch-title' },
+        h('h2', { id: 'watch-title' }, 'Let op: er kijkt iemand'),
+        h('ul', { class: 'modal-list' }, list),
+        h('p', { class: 'muted' }, 'Als je nu installeert, stopt deze stream. Kijkbox start opnieuw en dat duurt ongeveer een halve minuut; daarna kan er weer gekeken worden. Wil je doorgaan?'),
+        h('div', { class: 'modal-actions' },
+          now,
+          !waiting && h('button', { class: 'btn primary', onclick: () => close('wait') }, 'Installeren zodra niemand kijkt'),
+          h('button', { class: 'btn', onclick: () => close(null) }, 'Annuleren'))));
+    document.addEventListener('keydown', onKey);
+    document.body.append(overlay);
+    now.focus();
+  });
 }
 
 /** Beheerder: koppeling met OpenSubtitles. Sleutel en wachtwoord gaan nooit terug naar de browser. */

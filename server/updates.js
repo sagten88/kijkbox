@@ -11,7 +11,7 @@ const REQUEST = path.join(config.dataDir, 'update-request');
 const SETTINGS = path.join(config.dataDir, 'update-config.json');
 const WHATS_NEW = path.join(config.dataDir, 'whats-new.json');
 // Bestaat alleen op installaties die met het installatiescript zijn gemaakt.
-const UPDATER = '/usr/local/bin/kijkbox-update';
+const UPDATER = process.env.KIJKBOX_UPDATER || '/usr/local/bin/kijkbox-update';
 
 const readJson = (file) => {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
@@ -46,10 +46,13 @@ export function whatsNew() {
 
 export class UpdateError extends Error {}
 
-/** action: 'check' (alleen kijken) of 'install' (installeren zodra niemand kijkt). */
+/**
+ * action: 'check' (alleen kijken), 'install' (installeren zodra niemand kijkt) of 'install-now'
+ * (meteen installeren, ook als er iemand kijkt: de beheerder heeft dat bevestigd).
+ */
 export function requestUpdate(action) {
   if (!fs.existsSync(UPDATER)) throw new UpdateError('Updates zijn op deze installatie niet ingesteld.');
-  if (action !== 'check' && action !== 'install') throw new UpdateError('Onbekende actie.');
+  if (!['check', 'install', 'install-now'].includes(action)) throw new UpdateError('Onbekende actie.');
   fs.writeFileSync(REQUEST, action);
   return updateStatus();
 }

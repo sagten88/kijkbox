@@ -151,7 +151,8 @@ app.post('/api/network', requireAdmin, (req, res) => {
 });
 
 // ---- Updates (beheerder)
-app.get('/api/update', requireAdmin, (req, res) => res.json(updateStatus()));
+// Bij de updates ook wie er nu kijkt: dan kan de beheerder kiezen of de update toch meteen mag.
+app.get('/api/update', requireAdmin, (req, res) => res.json({ ...updateStatus(), watching: playingNow() }));
 
 // ---- Back-ups (beheerder)
 app.get('/api/backups', requireAdmin, (req, res) => res.json(listBackups()));
@@ -186,7 +187,7 @@ app.get('/api/whats-new', requireUser, (req, res) => res.json(whatsNew() ?? {}))
 app.post('/api/update', requireAdmin, (req, res) => {
   try {
     if (typeof req.body?.auto === 'boolean') return res.json(setAutoUpdate(req.body.auto));
-    res.json(requestUpdate(req.body?.action));
+    res.json({ ...requestUpdate(req.body?.action), watching: playingNow() });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -1014,6 +1015,20 @@ function deviceName(req) {
   return /iPhone|iPad|Android|Windows|Macintosh|Linux/.exec(ua)?.[0]?.replace('Macintosh', 'Mac') ?? 'onbekend';
 }
 
+/** Wat er nu speelt en wie er kijkt. */
+function playingNow() {
+  return playbackStatus().map((p) => {
+    // Bij doorgegeven streams weet de server niet welk tabblad kijkt, alleen welk item.
+    const who = p.cids
+      ? p.cids.map((cid) => plays.get(cid)).filter(Boolean)
+      : [...plays.values()].filter((play) => play.itemId === p.itemId);
+    const seen = new Set();
+    const watchers = who.filter((w) => !seen.has(`${w.user}|${w.device}`) && seen.add(`${w.user}|${w.device}`))
+      .map(({ user, device }) => ({ user, device }));
+    return { name: p.name, type: p.type, mode: p.mode, since: p.since, provider: p.provider, failed: p.failed, watchers };
+  });
+}
+
 let cpuBefore = null;
 /** Hoe druk de processor het had sinds de vorige vraag (in procenten). */
 function cpuPercent() {
@@ -1030,16 +1045,7 @@ function cpuPercent() {
 app.get('/api/status', requireAdmin, async (req, res) => {
   const now = Date.now();
   for (const [cid, play] of plays) if (now - play.at > 12 * 3600 * 1000) plays.delete(cid);
-  const playing = playbackStatus().map((p) => {
-    // Bij doorgegeven streams weet de server niet welk tabblad kijkt, alleen welk item.
-    const who = p.cids
-      ? p.cids.map((cid) => plays.get(cid)).filter(Boolean)
-      : [...plays.values()].filter((play) => play.itemId === p.itemId);
-    const seen = new Set();
-    const watchers = who.filter((w) => !seen.has(`${w.user}|${w.device}`) && seen.add(`${w.user}|${w.device}`))
-      .map(({ user, device }) => ({ user, device }));
-    return { name: p.name, type: p.type, mode: p.mode, since: p.since, provider: p.provider, failed: p.failed, watchers };
-  });
+  const playing = playingNow();
   let disk = null;
   try {
     const st = fs.statfsSync(config.dataDir);
