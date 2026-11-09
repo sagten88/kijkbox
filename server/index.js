@@ -8,7 +8,7 @@ import {
 } from './auth.js';
 import { titleKey } from './titles.js';
 import { isLocalAddress, NetworkError, networkSettings, saveProxy, trustProxyValue } from './network.js';
-import { requestUpdate, setAutoUpdate, updateStatus } from './updates.js';
+import { requestUpdate, setAutoUpdate, updateStatus, whatsNew } from './updates.js';
 import { config, rootDir } from './config.js';
 import {
   countryLabel, countryList, countryOf, FIRST_COUNTRY, firstCountryOnTop, groupsOfCountry, withoutCountry,
@@ -115,6 +115,9 @@ app.post('/api/network', requireAdmin, (req, res) => {
 
 // ---- Updates (beheerder)
 app.get('/api/update', requireAdmin, (req, res) => res.json(updateStatus()));
+
+// Wat er nieuw is na een update: iedereen ziet dat één keer op Home.
+app.get('/api/whats-new', requireUser, (req, res) => res.json(whatsNew() ?? {}));
 
 app.post('/api/update', requireAdmin, (req, res) => {
   try {

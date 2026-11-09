@@ -9,6 +9,7 @@ import { config } from './config.js';
 const STATUS = path.join(config.dataDir, 'update-status.json');
 const REQUEST = path.join(config.dataDir, 'update-request');
 const SETTINGS = path.join(config.dataDir, 'update-config.json');
+const WHATS_NEW = path.join(config.dataDir, 'whats-new.json');
 // Bestaat alleen op installaties die met het installatiescript zijn gemaakt.
 const UPDATER = '/usr/local/bin/kijkbox-update';
 
@@ -28,6 +29,18 @@ export function updateStatus() {
     state: typeof status.state === 'string' ? status.state : 'idle',
     message: typeof status.message === 'string' ? status.message.slice(0, 500) : '',
     checkedAt: Number(status.checkedAt) || null,
+    whatsNew: whatsNew(),
+  };
+}
+
+/** Wat er nieuw is in de versie die nu draait (na een update), of null. */
+export function whatsNew() {
+  const data = readJson(WHATS_NEW);
+  if (!data || data.version !== config.version) return null;
+  return {
+    version: data.version,
+    notes: typeof data.notes === 'string' ? data.notes.slice(0, 4000) : '',
+    at: Number(data.at) || null,
   };
 }
 

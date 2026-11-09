@@ -415,6 +415,12 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px; min-hei
 .panel details > input[type=search] { margin-top: 10px; }
 
 /* ---- Updates */
+.whats-new {
+  display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 20px; padding: 14px 16px;
+  border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}
+.whats-new b { display: block; margin-bottom: 6px; }
 .update-new { padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
 .update-new p { margin: 0 0 6px; }
 .update-notes { margin: 0; white-space: pre-wrap; font: inherit; font-size: 13px; color: var(--muted); max-height: 220px; overflow-y: auto; }

@@ -9,7 +9,8 @@ User=kijkbox
 Group=kijkbox
 WorkingDirectory=/opt/kijkbox
 EnvironmentFile=/etc/kijkbox/kijkbox.env
-ExecStart=/usr/bin/node server/index.js
+# Via env: Node.js staat soms in /usr/bin (NodeSource), soms in /usr/local/bin.
+ExecStart=/usr/bin/env node --no-warnings server/index.js
 Restart=on-failure
 RestartSec=3
 PrivateTmp=yes

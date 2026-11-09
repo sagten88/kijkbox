@@ -1204,6 +1204,34 @@ async function removeFromContinue(item) {
 }
 
 
+// Na een update: één keer per account (op dit apparaat) laten zien wat er nieuw is.
+const seenKey = () => `kijkbox-nieuw-gezien-${state.user?.id}`;
+
+async function loadWhatsNew(slot) {
+  let data;
+  try {
+    data = await api('GET', '/api/whats-new');
+  } catch {
+    return;
+  }
+  let seen = null;
+  try { seen = localStorage.getItem(seenKey()); } catch {}
+  if (!data.version || seen === data.version || !slot.isConnected) return;
+  const close = h('button', {
+    class: 'btn compact',
+    onclick: () => {
+      try { localStorage.setItem(seenKey(), data.version); } catch {}
+      slot.replaceChildren();
+      if (TV) tvFocusDefault();
+    },
+  }, 'Begrepen');
+  slot.replaceChildren(h('section', { class: 'whats-new' },
+    h('div', { class: 'grow' },
+      h('b', {}, `Kijkbox is bijgewerkt naar versie ${data.version}`),
+      data.notes && h('pre', { class: 'update-notes' }, data.notes)),
+    close));
+}
+
 // Uitgelicht bovenaan Home: een recente film met een goede beoordeling en een achtergrondbeeld.
 const FEATURED_KEY = 'kijkbox-uitgelicht';
 
@@ -1255,8 +1283,10 @@ async function homeView(container) {
   if (channels.length) liveList = channels;
 
   const page = h('div', { class: 'page home' });
+  const news = h('div', { class: 'whats-new-slot' });
   const featured = h('div', { class: 'featured-slot' });
-  page.append(featured);
+  page.append(news, featured);
+  loadWhatsNew(news);
   loadFeatured(featured);
   if (continuing.length) page.append(shelf('Verder kijken', h('div', { class: 'shelf-row' }, continuing.map(posterCard))));
   if (channels.length) {
@@ -1959,6 +1989,9 @@ function updatesPanel() {
       s.managed && newer && h('div', { class: 'update-new' },
         h('p', {}, h('b', {}, `Nieuwe versie: ${s.latest}`)),
         s.notes && h('pre', { class: 'update-notes' }, s.notes)),
+      !newer && s.whatsNew?.notes && h('details', {},
+        h('summary', {}, `Wat is er nieuw in versie ${s.whatsNew.version}`),
+        h('pre', { class: 'update-notes' }, s.whatsNew.notes)),
       s.managed && (states[s.state] || s.pending) && h('p', { class: s.state === 'error' ? 'error small' : 'muted small' }, states[s.state] ?? 'Verzoek verstuurd…'),
       s.managed && h('div', { class: 'actions' },
         newer && h('button', { class: 'btn primary', disabled: s.pending || s.state === 'waiting' || s.state === 'installing', onclick: () => act({ action: 'install' }) }, 'Update installeren'),
