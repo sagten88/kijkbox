@@ -599,11 +599,20 @@ const tvBtn = (cls, label, onclick, ...kids) => h('button', { class: `tv-btn ${c
 const tvBack10 = tvBtn('', '10 seconden terug', () => tvSeek(-10), icon('replay'), h('span', {}, '10'));
 const tvPlay = tvBtn('tv-play', 'Pauze', () => tvTogglePlay());
 const tvFwd10 = tvBtn('', '10 seconden vooruit', () => tvSeek(10), h('span', {}, '10'), icon('forward'));
+const tvBack30 = tvBtn('', '30 seconden terug', () => tvSeek(-30), icon('replay'), h('span', {}, '30'));
+const tvFwd30 = tvBtn('', '30 seconden vooruit', () => tvSeek(30), h('span', {}, '30'), icon('forward'));
 const tvNextEp = tvBtn('tv-next', 'Volgende aflevering', () => tvPlayNext(), icon('next', true), h('span', {}, 'Volgende aflevering'));
 // Ondertitels: één knop die wisselt tussen uit, Nederlands en Engels.
 const ccButton = h('button', { class: 'icon-btn cc-btn', 'aria-label': 'Ondertitels', onclick: () => cycleSubtitles() });
 const tvCc = tvBtn('tv-cc', 'Ondertitels', () => cycleSubtitles());
-const tvControls = h('div', { class: 'tv-controls' }, tvBack10, tvPlay, tvFwd10, tvCc, tvNextEp);
+const tvControls = h('div', { class: 'tv-controls' }, tvBack30, tvBack10, tvPlay, tvFwd10, tvFwd30, tvCc, tvNextEp);
+// Computer en telefoon: spoelknoppen onder het beeld (de gewone videobalk heeft die niet). Niet bij live.
+const seekBtn = (seconds) => h('button', {
+  class: 'btn compact seek-btn', type: 'button',
+  'aria-label': `${Math.abs(seconds)} seconden ${seconds < 0 ? 'terug' : 'vooruit'}`,
+  onclick: () => tvSeek(seconds),
+}, seconds < 0 ? [icon('replay'), `${-seconds}`] : [`${seconds}`, icon('forward')]);
+const seekRow = h('div', { class: 'seek-row' }, seekBtn(-30), seekBtn(-10), seekBtn(10), seekBtn(30));
 const tvHint = h('div', { class: 'tv-hint' });
 const stage = h('section', { class: 'stage', 'aria-label': 'Speler' },
   h('div', { class: 'video-wrap' }, video, videoMsg,
@@ -612,6 +621,7 @@ const stage = h('section', { class: 'stage', 'aria-label': 'Speler' },
     h('div', { class: 'grow' }, nowTitle, nowSub, tvProgress, tvControls, tvHint),
     prevButton, nextButton, ccButton, favButton,
     h('button', { class: 'icon-btn', 'aria-label': 'Stoppen', onclick: () => stopPlayback() }, icon('close'))),
+  seekRow,
   stageInfo);
 
 // ---- Ondertitels (uit het bestand zelf, anders via de server van OpenSubtitles)
@@ -943,6 +953,7 @@ function updateNowBar(item) {
   nowSub.textContent = item.now?.title || clean(item.group);
   const live = item.type === 'live';
   prevButton.hidden = nextButton.hidden = !live;
+  seekRow.hidden = live || TV;
   prevButton.style.display = nextButton.style.display = live ? '' : 'none';
   clearSubtitles();
   updateCcButtons();
@@ -2820,7 +2831,7 @@ function tvMove(direction) {
 let tvNext = null; // de volgende aflevering, als die er is
 let tvNextShown = false;
 
-const tvControlList = () => [tvBack10, tvPlay, tvFwd10, tvCc, tvNextEp].filter((b) => !b.hidden);
+const tvControlList = () => [tvBack30, tvBack10, tvPlay, tvFwd10, tvFwd30, tvCc, tvNextEp].filter((b) => !b.hidden);
 const tvBarOpen = () => stage.classList.contains('show-bar');
 const tvInControls = () => tvControls.contains(document.activeElement);
 

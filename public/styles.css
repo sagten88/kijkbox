@@ -638,3 +638,10 @@ html, body { overflow-x: hidden; }
 .modal-list { margin: 0; padding: 10px 12px 10px 28px; border-radius: var(--r-sm); background: var(--panel-2); display: grid; gap: 4px; }
 .modal-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .modal .btn.danger { border-color: color-mix(in srgb, var(--danger) 50%, var(--line)); }
+
+/* ---- Spoelknoppen onder het beeld (computer en telefoon) */
+.seek-row { display: flex; justify-content: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.seek-row[hidden] { display: none; }
+.seek-btn { min-width: 64px; gap: 4px; font-variant-numeric: tabular-nums; }
+.seek-btn .icon { width: 16px; height: 16px; }
+body.tv .seek-row { display: none; }
