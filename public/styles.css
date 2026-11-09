@@ -620,3 +620,13 @@ body.tv .poster-play { pointer-events: none; width: 50px; height: 50px; margin: 
 .pattern-choice.active { color: var(--text); }
 .pattern-choice.active .swatch-box { border-color: var(--accent); }
 .pattern-choice:hover .swatch-box { border-color: var(--hover-line); }
+
+/* ---- Telefoon: de pagina schuift nooit zijwaarts.
+   Rijen die je wél zijwaarts veegt (posters, gids, dagen) hebben hun eigen scroll. */
+.view { overflow-x: hidden; overscroll-behavior-x: none; }
+html, body { overflow-x: hidden; }
+/* Keuzes in Weergave: het raster mag niet breder worden dan het paneel (anders kwamen alle
+   profielfoto's naast elkaar en schoof de pagina opzij). */
+.theme-picker { grid-template-columns: minmax(0, 1fr); }
+.theme-picker > * { min-width: 0; }
+.page { min-width: 0; }
