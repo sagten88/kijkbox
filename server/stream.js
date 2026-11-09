@@ -436,7 +436,7 @@ async function waitUntilReady(session, cid) {
 
 async function startFfmpeg(item, { cid, transcode, live, start, native }) {
   await assertHostAllowed(item.url);
-  const key = `${item.id}:${transcode ? 't' : 'c'}:${start}`;
+  const key = `${item.id}:${item.catchupKey ?? ''}:${transcode ? 't' : 'c'}:${start}`;
   let session = byKey.get(key);
   if (!session) {
     if (sessions.size >= config.maxFfmpeg) {

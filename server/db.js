@@ -172,6 +172,15 @@ if (db.prepare('PRAGMA user_version').get().user_version < 5) {
     PRAGMA user_version = 5;
   `);
 }
+// Versie 6: terugkijken. Per zender hoeveel dagen de provider bewaart; de bronnen en tv-gidsen
+// worden meteen opnieuw ingelezen zodat dit (en de gids van de afgelopen dagen) er staat.
+if (db.prepare('PRAGMA user_version').get().user_version < 6) {
+  db.exec(`
+    ALTER TABLE items ADD COLUMN archive_days INTEGER NOT NULL DEFAULT 0;
+    UPDATE sources SET last_refresh = 0, last_epg_refresh = 0 WHERE type = 'xtream';
+    PRAGMA user_version = 6;
+  `);
+}
 db.exec(`
 CREATE INDEX IF NOT EXISTS items_by_title ON items(type, title_key, lang_rank);
 CREATE INDEX IF NOT EXISTS items_primary ON items(type, is_primary, sort);

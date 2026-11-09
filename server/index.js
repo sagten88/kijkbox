@@ -21,7 +21,7 @@ import { approvePairing, createPairing, pollPairing } from './pairing.js';
 import { refreshEpg } from './epg.js';
 import { isDue, nextNightly } from './schedule.js';
 import { saveSubtitleSettings, SubtitleError, subtitleCues, subtitleSettings } from './subtitles.js';
-import { isRefreshing, loadBackdrop, loadEpisodes, providerStatus, refreshSource } from './sources.js';
+import { catchupUrl, isRefreshing, loadBackdrop, loadEpisodes, providerStatus, refreshSource } from './sources.js';
 import {
   releaseViewer, serveBackdrop, serveFfmpegFile, serveLogo, serveSubtitleCues, serveSubtitleList, serveManifest, playbackStatus, servePassthrough, startPlayback, stopAllSessions,
 } from './stream.js';
@@ -865,14 +865,19 @@ app.get('/api/guide', requireUser, (req, res) => {
   const rows = db.prepare(`SELECT ${BROWSE_COLUMNS} FROM items i ${BROWSE_JOINS}
     WHERE ${sql} ORDER BY ${order} LIMIT :limit OFFSET :offset`).all(params);
   const from = clampInt(req.query.from, 0, Number.MAX_SAFE_INTEGER, now());
-  const to = from + 6 * 3600 * 1000;
+  const to = from + clampInt(req.query.hours, 1, 30, 6) * 3600 * 1000;
   const query = db.prepare(`SELECT title, start, stop FROM programmes
     WHERE source_id = ? AND epg_id = ? AND stop > ? AND start < ? ORDER BY start`);
+  const archive = db.prepare('SELECT archive_days FROM items WHERE id = ?');
   res.json({
     from,
     to,
     more: rows.length === params.limit,
-    channels: rows.map((r) => ({ ...dto(r), programmes: r.epg_id ? query.all(r.source_id, r.epg_id, from, to) : [] })),
+    channels: rows.map((r) => ({
+      ...dto(r),
+      archiveDays: archive.get(r.id)?.archive_days || undefined,
+      programmes: r.epg_id ? query.all(r.source_id, r.epg_id, from, to) : [],
+    })),
   });
 });
 
@@ -942,6 +947,39 @@ app.post('/api/play/:id', requireUser, async (req, res) => {
     if (err.name === 'AbortError') return res.status(499).end();
     if (!(err instanceof UpstreamError)) console.error(`Afspelen mislukt: ${err.code ?? err.name}`);
     res.status(502).json({ error: err instanceof UpstreamError ? err.message : 'De stream is nu niet bereikbaar.' });
+  }
+});
+
+/**
+ * Terugkijken: een uitzending die al (deels) voorbij is, afspelen als een film. `offset` (seconden)
+ * om verder te kijken; dat gaat in hele minuten via de begintijd bij de provider.
+ */
+app.post('/api/catchup/:id', requireUser, async (req, res) => {
+  const { cid, start, stop, offset = 0, mode = 'remux' } = req.body ?? {};
+  const item = db.prepare('SELECT * FROM items WHERE id = ?').get(Number(req.params.id));
+  if (!item || item.type !== 'live') return res.status(404).json({ error: 'Niet gevonden.' });
+  if (!validCid(cid) || !Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) return res.status(400).json({ error: 'Ongeldig verzoek.' });
+  if (!item.archive_days) return res.status(400).json({ error: 'Bij deze zender kun je niet terugkijken.' });
+  const current = now();
+  if (start > current) return res.status(400).json({ error: 'Deze uitzending is nog niet begonnen.' });
+  // Een paar uur speling: providers ronden het archief per dag af.
+  if (start < current - item.archive_days * 86400000 - 3 * 3600000) {
+    return res.status(400).json({ error: `Deze uitzending is te oud: je provider bewaart ${item.archive_days} dag${item.archive_days === 1 ? '' : 'en'}.` });
+  }
+  const skip = Math.floor(clampInt(offset, 0, 24 * 3600, 0) / 60);
+  const from = start + skip * 60000;
+  const minutes = (Math.min(stop, current) - from) / 60000;
+  if (minutes < 1) return res.status(400).json({ error: 'Je hebt deze uitzending al helemaal gezien.' });
+  const url = catchupUrl(item, from, minutes);
+  if (!url) return res.status(400).json({ error: 'Bij deze bron kun je niet terugkijken.' });
+  try {
+    const started = await startPlayback({ ...item, type: 'catchup', url, catchupKey: `${from}-${minutes}` },
+      { mode: mode === 'transcode' ? 'transcode' : 'remux', cid, start: 0, native: false });
+    plays.set(cid, { user: req.user.username, device: deviceName(req), itemId: item.id, at: Date.now() });
+    res.json({ ...started, base: skip * 60 });
+  } catch (err) {
+    if (err.name === 'AbortError') return res.status(499).end();
+    res.status(502).json({ error: err instanceof UpstreamError ? err.message : 'De uitzending is nu niet bereikbaar.' });
   }
 });
 

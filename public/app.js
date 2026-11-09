@@ -725,7 +725,7 @@ function teardownEngine() {
 
 function saveProgress(force = false) {
   const { item } = player;
-  if (!item || item.type === 'live' || !player.started) return;
+  if (!item || item.type === 'live' || item.type === 'catchup' || !player.started) return;
   const now = Date.now();
   if (!force && now - player.lastSave < 15000) return;
   player.lastSave = now;
@@ -887,8 +887,12 @@ async function start(item, { mode = 'auto', resume = 0 } = {}) {
     tvShowBar();
   }
   if (item.type === 'live') localStorage.setItem(LAST_CHANNEL_KEY, String(item.id));
+  if (item.catchup) toast(`Terugkijken: ${item.name}`);
   try {
-    const info = await api('POST', `/api/play/${item.id}`, { mode, cid, start: resume, native: isAppleTouch() });
+    // Terugkijken: dezelfde zender, maar een uitzending van eerder.
+    const info = item.catchup
+      ? await api('POST', `/api/catchup/${item.id}`, { cid, start: item.catchup.start, stop: item.catchup.stop, offset: resume, mode: mode === 'transcode' ? 'transcode' : 'remux' })
+      : await api('POST', `/api/play/${item.id}`, { mode, cid, start: resume, native: isAppleTouch() });
     if (seq !== player.seq) return;
     attach(info, seq);
   } catch (err) {
@@ -1736,12 +1740,35 @@ async function guideView(container) {
   const filters = h('div', { class: 'filters' });
   let group = liveFilter.group;
   let latest = 0;
+  // Dag in de gids: 0 = vandaag, 1 = gisteren, … Terugkijken kan alleen bij zenders met een archief.
+  let day = 0;
+  const days = h('div', { class: 'chips guide-days' });
+  const dayStart = (back) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - back); return d.getTime(); };
+  const dayLabel = (back) => (back === 0 ? 'Vandaag' : back === 1 ? 'Gisteren' : back === 2 ? 'Eergisteren'
+    : new Date(dayStart(back)).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'short' }));
+  function drawDays(maxBack) {
+    days.replaceChildren(...Array.from({ length: maxBack + 1 }, (_, i) => maxBack - i).map((back) => h('button', {
+      type: 'button', class: `chip${back === day ? ' active' : ''}`,
+      onclick: () => { day = back; load(); },
+    }, dayLabel(back))));
+    days.hidden = maxBack === 0;
+  }
+  drawDays(0);
+
+  /** Een uitzending van eerder afspelen. */
+  function playPast(channel, p) {
+    const when = new Date(p.start).toLocaleString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    start({ ...channel, type: 'catchup', name: p.title, group: `${clean(channel.name)} · ${when}`, catchup: { start: p.start, stop: p.stop } });
+  }
 
   async function load() {
     const mine = ++latest;
     box.replaceChildren(h('p', { class: 'empty' }, 'Laden…'));
-    const from = Math.floor(Date.now() / 1800000) * 1800000 - 1800000;
-    const params = new URLSearchParams({ from });
+    // Vandaag vanaf 06:00 (dan zie je ook wat er eerder vandaag was); eerdere dagen helemaal.
+    const today = day === 0;
+    const from = today ? Math.min(dayStart(0) + 6 * 3600000, Math.floor(Date.now() / 1800000) * 1800000 - 1800000) : dayStart(day);
+    const span = today ? Math.ceil((Date.now() + 6 * 3600000 - from) / 3600000) : 24;
+    const params = new URLSearchParams({ from, hours: span });
     if (liveFilter.country) params.set('country', liveFilter.country);
     if (group) params.set('group', group);
     const data = await api('GET', `/api/guide?${params}`);
@@ -1752,24 +1779,36 @@ async function guideView(container) {
     const hours = [];
     for (let t = data.from; t < data.to; t += 1800000) hours.push(h('span', { style: `left:${x(t)}px` }, time(t)));
 
+    const maxBack = Math.min(7, Math.max(0, ...data.channels.map((c) => c.archiveDays ?? 0)));
+    drawDays(maxBack);
     const rows = data.channels.map((channel) => h('div', { class: 'guide-row' },
-      h('button', { class: 'guide-channel', onclick: () => start(channel) }, logoBox(channel), h('span', { class: 'ellipsis' }, clean(channel.name))),
+      h('button', { class: 'guide-channel', onclick: () => start(channel) }, logoBox(channel),
+        h('span', { class: 'ellipsis' }, clean(channel.name)),
+        channel.archiveDays && h('span', { class: 'archive-mark', title: `Terugkijken tot ${channel.archiveDays} dagen` }, icon('replay'))),
       h('div', { class: 'guide-track', style: `width:${width}px` }, channel.programmes.map((p) => {
         const left = Math.max(0, x(p.start));
         const right = Math.min(width, x(p.stop));
+        const current = p.start <= now && p.stop > now;
+        const past = p.stop <= now;
+        const canReplay = (past || current) && channel.archiveDays && p.start >= now - channel.archiveDays * 86400000;
+        // Wat nu loopt: live kijken. Wat voorbij is: terugkijken als dat kan.
+        const play = current ? () => start(channel) : canReplay ? () => playPast(channel, p) : () => toast(past ? 'Bij deze zender kun je niet terugkijken.' : 'Deze uitzending is nog niet begonnen.');
         return h('button', {
-          class: `guide-show${p.start <= now && p.stop > now ? ' current' : ''}`,
+          class: `guide-show${current ? ' current' : ''}${past ? ' past' : ''}${canReplay && past ? ' replay' : ''}`,
           style: `left:${left}px;width:${Math.max(0, right - left - 2)}px`,
-          onclick: () => start(channel),
-        }, h('b', {}, p.title), h('span', {}, `${time(p.start)} – ${time(p.stop)}`));
+          title: canReplay && past ? 'Terugkijken' : undefined,
+          onclick: play,
+        }, h('b', {}, canReplay && past ? [icon('replay'), ' ', p.title] : p.title), h('span', {}, `${time(p.start)} – ${time(p.stop)}`),
+        current && canReplay && h('span', { class: 'replay-start', role: 'button', title: 'Vanaf het begin', onclick: (e) => { e.stopPropagation(); playPast(channel, p); } }, icon('replay'), ' Vanaf begin'));
       }))));
 
     const inner = h('div', { class: 'guide-inner' },
       h('div', { class: 'guide-times' }, h('div', { class: 'guide-corner' }), h('div', { class: 'guide-scale', style: `width:${width}px` }, hours)),
       rows,
-      h('div', { class: 'guide-now', style: `left:${104 + x(now)}px` }));
+      now >= data.from && now < data.to && h('div', { class: 'guide-now', style: `left:${104 + x(now)}px` }));
     box.replaceChildren(inner);
-    box.scrollLeft = Math.max(0, x(now) - 60);
+    // Vandaag bij nu beginnen, eerdere dagen bij de avond (20:00).
+    box.scrollLeft = Math.max(0, (today ? x(now) : x(dayStart(day) + 20 * 3600000)) - 60);
   }
 
   function drawFilters({ countries, groups }) {
@@ -1788,7 +1827,7 @@ async function guideView(container) {
   }
 
   drawFilters(first);
-  container.replaceChildren(h('div', { class: 'page' }, filters, box));
+  container.replaceChildren(h('div', { class: 'page' }, filters, days, box));
   await load();
 }
 

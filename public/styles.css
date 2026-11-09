@@ -541,3 +541,16 @@ label.btn input[type=file] { display: none; }
 }
 /* Vervagen is zwaar voor tv's: daar alleen doorzichtig. */
 body.tv .panel, body.tv .tile, body.tv .live-tile, body.tv .nav, body.tv .btn, body.tv .chip { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* ---- Terugkijken in de gids */
+.guide-days { margin: 0 0 12px; flex-wrap: wrap; }
+.guide-days[hidden] { display: none; }
+.guide-show.past { opacity: .55; }
+.guide-show.past.replay { opacity: 1; background: color-mix(in srgb, var(--accent) 9%, var(--panel-2)); }
+.guide-show.past.replay:hover { background: color-mix(in srgb, var(--accent) 20%, var(--panel-2)); }
+.guide-show .icon { width: 12px; height: 12px; vertical-align: -1px; color: var(--accent); }
+.guide-show .replay-start { position: absolute; right: 6px; bottom: 5px; padding: 1px 6px; border-radius: 999px; background: var(--panel); color: var(--text); font-size: 11px; font-weight: 600; }
+.guide-show .replay-start:hover { background: var(--accent); color: var(--accent-ink); }
+.guide-show .replay-start:hover .icon { color: inherit; }
+.archive-mark { margin-left: auto; color: var(--accent); display: inline-flex; flex: none; }
+.archive-mark .icon { width: 13px; height: 13px; }

@@ -15,16 +15,16 @@ const MAX_XTREAM_JSON = 500 * 1024 * 1024;
 
 const upsertItem = db.prepare(`
   INSERT INTO items (source_id, ext_key, type, name, name_lc, grp, logo, url, epg_id, parent_id, ext_id,
-                     season, episode, plot, rating, year, user_agent, referer, sort, generation, title_key, lang_rank)
+                     season, episode, plot, rating, year, user_agent, referer, sort, generation, title_key, lang_rank, archive_days)
   VALUES (:source_id, :ext_key, :type, :name, :name_lc, :grp, :logo, :url, :epg_id, :parent_id, :ext_id,
-          :season, :episode, :plot, :rating, :year, :user_agent, :referer, :sort, :generation, :title_key, :lang_rank)
+          :season, :episode, :plot, :rating, :year, :user_agent, :referer, :sort, :generation, :title_key, :lang_rank, :archive_days)
   ON CONFLICT (source_id, ext_key) DO UPDATE SET
     title_key = excluded.title_key, lang_rank = excluded.lang_rank,
     type = excluded.type, name = excluded.name, name_lc = excluded.name_lc, grp = excluded.grp,
     logo = excluded.logo, url = excluded.url, epg_id = excluded.epg_id, parent_id = excluded.parent_id,
     ext_id = excluded.ext_id, season = excluded.season, episode = excluded.episode, plot = excluded.plot,
     rating = excluded.rating, year = excluded.year, user_agent = excluded.user_agent,
-    referer = excluded.referer, sort = excluded.sort, generation = excluded.generation
+    referer = excluded.referer, sort = excluded.sort, generation = excluded.generation, archive_days = excluded.archive_days
   RETURNING id`);
 
 /**
@@ -65,6 +65,7 @@ class ItemWriter {
       generation: item.generation ?? this.generation,
       title_key: '',
       lang_rank: 2,
+      archive_days: Math.max(0, Math.min(30, Math.floor(Number(item.archive_days) || 0))),
     };
     if (row.type === 'movie' || row.type === 'series') {
       row.title_key = titleKey(name);
@@ -266,6 +267,33 @@ export async function providerStatus() {
   return value;
 }
 
+/** "2026-11-09:20-30" in de tijdzone van de provider. */
+function providerTime(ms, timeZone) {
+  let parts;
+  try {
+    parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+      timeZone: timeZone || 'Europe/Amsterdam', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(ms)).map((p) => [p.type, p.value]));
+  } catch {
+    return providerTime(ms, 'Europe/Amsterdam');
+  }
+  return `${parts.year}-${parts.month}-${parts.day}:${parts.hour}-${parts.minute}`;
+}
+
+/**
+ * Link om een uitzending terug te kijken (Xtream "timeshift"). Alleen voor Xtream-zenders waarbij
+ * de provider een archief bijhoudt. Geeft null als dat niet kan.
+ */
+export function catchupUrl(item, startMs, minutes) {
+  const source = db.prepare('SELECT * FROM sources WHERE id = ?').get(item.source_id);
+  if (!source || source.type !== 'xtream' || !item.archive_days || !item.ext_id) return null;
+  let timeZone = null;
+  try { timeZone = JSON.parse(source.account_info || '{}').timezone; } catch { /* standaard */ }
+  const user = encodeURIComponent(source.username);
+  const pass = encodeURIComponent(source.password);
+  return `${xtreamBase(source)}/timeshift/${user}/${pass}/${Math.max(1, Math.ceil(minutes))}/${providerTime(startMs, timeZone)}/${item.ext_id}.ts`;
+}
+
 const streamUrl = (source, kind, id, extension) => {
   const user = encodeURIComponent(source.username);
   const pass = encodeURIComponent(source.password);
@@ -305,6 +333,8 @@ async function importXtream(source, writer, problems) {
     status: info.status,
     expires: info.exp_date ? Number(info.exp_date) * 1000 : null,
     maxConnections: Number(info.max_connections) || null,
+    // Tijdzone van de provider: terugkijken werkt met de klok van de provider.
+    timezone: account.server_info?.timezone || null,
   }), source.id);
 
   const categories = async (action) => {
@@ -333,6 +363,7 @@ async function importXtream(source, writer, problems) {
       logo: s.stream_icon,
       epg_id: s.epg_channel_id,
       url: streamUrl(source, 'live', s.stream_id, extension),
+      archive_days: Number(s.tv_archive) === 1 ? Number(s.tv_archive_duration) || 1 : 0,
     });
   }
 

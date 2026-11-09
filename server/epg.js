@@ -3,7 +3,8 @@ import { db } from './db.js';
 import { xtreamBase } from './sources.js';
 import { open, UpstreamError } from './upstream.js';
 
-const KEEP_BEFORE = 12 * 3600 * 1000;
+// Zo ver terug blijft de gids staan (voor terugkijken). Providers bewaren meestal 1 tot 7 dagen.
+const KEEP_BEFORE = 7 * 86400 * 1000;
 const KEEP_AFTER = 4 * 86400 * 1000;
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -143,7 +144,11 @@ export async function refreshEpg(id) {
       db.prepare('DELETE FROM programmes WHERE source_id = ? AND id > ?').run(id, lastOldId);
       throw err;
     }
-    db.prepare('DELETE FROM programmes WHERE source_id = ? AND id <= ?').run(id, lastOldId);
+    // Oude programma's blijven staan als de nieuwe gids voor die zender later begint: zo bouwt de
+    // gids van de afgelopen dagen zich op, ook als de provider zelf maar een dag terug levert.
+    db.prepare(`DELETE FROM programmes WHERE source_id = :id AND id <= :last AND (stop < :cutoff OR stop > COALESCE(
+      (SELECT MIN(n.start) FROM programmes n WHERE n.source_id = :id AND n.epg_id = programmes.epg_id AND n.id > :last), -1))`)
+      .run({ id, last: lastOldId, cutoff: now - KEEP_BEFORE });
     setStatus.run(`${count} programma's`, Date.now(), id);
   } catch (err) {
     console.error(`Tv-gids van bron ${id} mislukt: ${err.code ?? err.name}`);
