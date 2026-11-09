@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import os from 'node:os';
+import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import {
@@ -7,8 +8,10 @@ import {
   pruneSessions, replaceSession, requireAdmin, requireUser, startSession, validPassword, validUsername, verifyOrDummy, verifyPassword,
 } from './auth.js';
 import { titleKey } from './titles.js';
+import { itemsChanged, memo } from './cache.js';
 import { isLocalAddress, NetworkError, networkSettings, saveProxy, trustProxyValue } from './network.js';
 import { requestUpdate, setAutoUpdate, updateStatus, whatsNew } from './updates.js';
+import { BackupError, backupPath, createBackup, listBackups, readBackup, restoreBackup } from './backup.js';
 import { config, rootDir } from './config.js';
 import {
   countryLabel, countryList, countryOf, FIRST_COUNTRY, firstCountryOnTop, groupsOfCountry, withoutCountry,
@@ -18,9 +21,9 @@ import { approvePairing, createPairing, pollPairing } from './pairing.js';
 import { refreshEpg } from './epg.js';
 import { isDue, nextNightly } from './schedule.js';
 import { saveSubtitleSettings, SubtitleError, subtitleCues, subtitleSettings } from './subtitles.js';
-import { isRefreshing, loadBackdrop, loadEpisodes, refreshSource } from './sources.js';
+import { isRefreshing, loadBackdrop, loadEpisodes, providerStatus, refreshSource } from './sources.js';
 import {
-  releaseViewer, serveBackdrop, serveFfmpegFile, serveLogo, serveManifest, servePassthrough, startPlayback, stopAllSessions,
+  releaseViewer, serveBackdrop, serveFfmpegFile, serveLogo, serveSubtitleCues, serveSubtitleList, serveManifest, playbackStatus, servePassthrough, startPlayback, stopAllSessions,
 } from './stream.js';
 import { parseMediaUrl, UpstreamError } from './upstream.js';
 
@@ -77,7 +80,7 @@ app.use((req, res, next) => {
 
 const smallJson = express.json({ limit: '64kb' });
 const largeJson = express.json({ limit: '80mb' });
-app.use('/api', (req, res, next) => (req.path === '/sources' ? largeJson : smallJson)(req, res, next));
+app.use('/api', (req, res, next) => (req.path === '/sources' || req.path === '/backups/restore' ? largeJson : smallJson)(req, res, next));
 
 // ---- Eerste keer opstarten
 const hasUsers = () => db.prepare('SELECT 1 FROM users LIMIT 1').get() !== undefined;
@@ -115,6 +118,33 @@ app.post('/api/network', requireAdmin, (req, res) => {
 
 // ---- Updates (beheerder)
 app.get('/api/update', requireAdmin, (req, res) => res.json(updateStatus()));
+
+// ---- Back-ups (beheerder)
+app.get('/api/backups', requireAdmin, (req, res) => res.json(listBackups()));
+
+app.post('/api/backups', requireAdmin, (req, res) => res.json(createBackup('handmatig')));
+
+app.get('/api/backups/:name', requireAdmin, (req, res) => {
+  try {
+    res.download(backupPath(req.params.name), req.params.name);
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+// Terugzetten: een back-up van deze server (name) of een geüpload bestand (data).
+app.post('/api/backups/restore', requireAdmin, (req, res) => {
+  try {
+    const data = req.body?.name ? readBackup(req.body.name) : req.body?.data;
+    const result = restoreBackup(data);
+    itemsChanged();
+    // Bronnen die hier nog niet bestonden meteen inlezen; favorieten volgen daarna vanzelf.
+    for (const id of result.refresh) refreshAll(id).catch(() => {});
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof BackupError ? err.message : 'Terugzetten mislukt.' });
+  }
+});
 
 // Wat er nieuw is na een update: iedereen ziet dat één keer op Home.
 app.get('/api/whats-new', requireUser, (req, res) => res.json(whatsNew() ?? {}));
@@ -397,6 +427,7 @@ app.post('/api/sources/:id/refresh', requireAdmin, (req, res) => {
 
 app.delete('/api/sources/:id', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM sources WHERE id = ?').run(Number(req.params.id));
+  itemsChanged();
   res.json({ ok: true });
 });
 
@@ -467,7 +498,8 @@ function browseFilter(req, forcedType) {
       where.push(`i.name_lc LIKE :q ESCAPE '\\'`);
     }
   }
-  if (fav === '1') where.push('f.user_id IS NOT NULL');
+  // Vanuit de favorieten zoeken in plaats van alle items langs te lopen.
+  if (fav === '1') where.push('i.id IN (SELECT item_id FROM favorites WHERE user_id = :user)');
   if (country && TYPES.has(type)) {
     const names = groupsOfCountry(groupsByType(type), String(country));
     where.push(names.length ? `i.grp IN (${namedList(params, 'c', names)})` : '1 = 0');
@@ -507,7 +539,8 @@ function hiddenGroups(userId, type) {
   return groupsByType(type).map((g) => g.name).filter((name) => groups.has(name) || countries.has(countryOf(name)));
 }
 
-const groupsByType = (type) => db.prepare('SELECT grp AS name, COUNT(*) AS count FROM items WHERE type = ? GROUP BY grp ORDER BY grp').all(type);
+// Groepen met aantallen. Dit telt ~190.000 rijen en verandert alleen bij verversen: dus bewaren.
+const groupsByType = memo((type) => db.prepare('SELECT grp AS name, COUNT(*) AS count FROM items WHERE type = ? GROUP BY grp ORDER BY grp').all(type));
 
 function namedList(params, prefix, values) {
   return values.map((value, index) => {
@@ -850,6 +883,7 @@ app.post('/api/play/:id', requireUser, async (req, res) => {
   if (!item) return res.status(404).json({ error: 'Niet gevonden.' });
   try {
     const started = await startPlayback(item, { mode, cid, start: Number(start) || 0, native: native === true });
+    plays.set(cid, { user: req.user.username, device: deviceName(req), itemId: item.id, at: Date.now() });
     res.json(started);
   } catch (err) {
     if (err.name === 'AbortError') return res.status(499).end();
@@ -869,8 +903,64 @@ app.post('/api/play-error', requireUser, (req, res) => {
 });
 
 app.post('/api/play-release', requireUser, (req, res) => {
-  if (validCid(req.body?.cid)) releaseViewer(req.body.cid);
+  if (validCid(req.body?.cid)) {
+    releaseViewer(req.body.cid);
+    plays.delete(req.body.cid);
+  }
   res.json({ ok: true });
+});
+
+// ---- Status voor de beheerder: wie kijkt wat, hoe druk de server is, wat de provider telt
+
+const plays = new Map(); // browsertab -> { user, device, itemId, at }
+
+function deviceName(req) {
+  const ua = req.get('user-agent') ?? '';
+  if (/KijkboxTV/.test(ua)) return 'TV-app';
+  return /iPhone|iPad|Android|Windows|Macintosh|Linux/.exec(ua)?.[0]?.replace('Macintosh', 'Mac') ?? 'onbekend';
+}
+
+let cpuBefore = null;
+/** Hoe druk de processor het had sinds de vorige vraag (in procenten). */
+function cpuPercent() {
+  const now = os.cpus().reduce((sum, c) => {
+    const total = Object.values(c.times).reduce((a, b) => a + b, 0);
+    return { idle: sum.idle + c.times.idle, total: sum.total + total };
+  }, { idle: 0, total: 0 });
+  const before = cpuBefore;
+  cpuBefore = now;
+  if (!before || now.total <= before.total) return null;
+  return Math.round(100 * (1 - (now.idle - before.idle) / (now.total - before.total)));
+}
+
+app.get('/api/status', requireAdmin, async (req, res) => {
+  const now = Date.now();
+  for (const [cid, play] of plays) if (now - play.at > 12 * 3600 * 1000) plays.delete(cid);
+  const playing = playbackStatus().map((p) => {
+    // Bij doorgegeven streams weet de server niet welk tabblad kijkt, alleen welk item.
+    const who = p.cids
+      ? p.cids.map((cid) => plays.get(cid)).filter(Boolean)
+      : [...plays.values()].filter((play) => play.itemId === p.itemId);
+    const seen = new Set();
+    const watchers = who.filter((w) => !seen.has(`${w.user}|${w.device}`) && seen.add(`${w.user}|${w.device}`))
+      .map(({ user, device }) => ({ user, device }));
+    return { name: p.name, type: p.type, mode: p.mode, since: p.since, provider: p.provider, failed: p.failed, watchers };
+  });
+  let disk = null;
+  try {
+    const st = fs.statfsSync(config.dataDir);
+    disk = { total: st.blocks * st.bsize, free: st.bavail * st.bsize };
+  } catch { /* niet overal beschikbaar */ }
+  res.set('Cache-Control', 'no-store').json({
+    version: config.version,
+    uptime: Math.round(process.uptime()),
+    system: {
+      cpu: cpuPercent(), cores: os.cpus().length, load: os.loadavg(),
+      memTotal: os.totalmem(), memFree: os.freemem(), memKijkbox: process.memoryUsage().rss, disk,
+    },
+    playing,
+    providers: await providerStatus(),
+  });
 });
 
 app.get('/api/img/:id', requireUser, serveLogo);
@@ -886,6 +976,8 @@ const media = (handler) => async (req, res) => {
 };
 app.get('/s/m/:token', requireUser, media(serveManifest));
 app.get('/s/g/:token', requireUser, media(servePassthrough));
+app.get('/s/t/:sid/:cid/subs', requireUser, serveSubtitleList);
+app.get('/s/t/:sid/:cid/subs/:n', requireUser, serveSubtitleCues);
 app.get('/s/t/:sid/:cid/:file', requireUser, serveFfmpegFile);
 
 // ---- Website
@@ -921,6 +1013,14 @@ async function maintenance() {
   maintaining = true;
   try {
     pruneSessions();
+    // Elke nacht om 03:00 een back-up (of meteen, als er nog geen recente is).
+    if (hasUsers() && isDue(listBackups()[0]?.at ?? 0, now(), 3)) {
+      try {
+        createBackup('dagelijks');
+      } catch (err) {
+        console.error(`Back-up mislukt: ${err.message}`);
+      }
+    }
     const sources = db.prepare('SELECT id, last_refresh, last_epg_refresh, type FROM sources').all();
     for (const s of sources) {
       if (s.type !== 'm3u_text' && shouldTry(`list${s.id}`, s.last_refresh)) {

@@ -4,4 +4,6 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+# De updater wacht soms uren tot niemand kijkt; systemd mag hem dan niet afbreken.
+TimeoutStartSec=7h
 ExecStart=/usr/local/bin/kijkbox-update request

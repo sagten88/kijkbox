@@ -166,6 +166,8 @@ if (db.prepare('PRAGMA user_version').get().user_version < 4) {
 db.exec(`
 CREATE INDEX IF NOT EXISTS items_by_title ON items(type, title_key, lang_rank);
 CREATE INDEX IF NOT EXISTS items_primary ON items(type, is_primary, sort);
+-- Films/series: één kaart per titel, Nederlands eerst. Met deze volgorde hoeft er niets gesorteerd te worden.
+CREATE INDEX IF NOT EXISTS items_primary_order ON items(type, is_primary, lang_rank, sort, name_lc);
 CREATE TABLE IF NOT EXISTS user_hidden (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK (kind IN ('country', 'group')),

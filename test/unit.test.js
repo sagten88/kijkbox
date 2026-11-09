@@ -128,6 +128,47 @@ test('Live-TS: geen MPEG-TS wordt ongemoeid doorgegeven', () => {
   assert.ok(d.passthrough && out.length > 0);
 });
 const { titleKey, langRank } = await import('../server/titles.js');
+
+test('Back-up: terugzetten, ook als de bron nog niet opnieuw is ingelezen', async () => {
+  const { db } = await import('../server/db.js');
+  const { createBackup, readBackup, restoreBackup, applyPendingRestore } = await import('../server/backup.js');
+  const now = Date.now();
+  db.prepare(`INSERT INTO users (id, username, password_hash, role, created_at) VALUES (901, 'bk-admin', 'x', 'admin', ?), (902, 'bk-kijker', 'y', 'viewer', ?)`).run(now, now);
+  db.prepare(`INSERT INTO sources (id, name, type, url) VALUES (901, 'Back-uptest', 'm3u', 'http://voorbeeld.test/lijst.m3u')`).run();
+  const addItem = db.prepare(`INSERT INTO items (source_id, ext_key, type, name, name_lc, url) VALUES (901, ?, 'movie', ?, ?, 'http://voorbeeld.test/f.mp4') RETURNING id`);
+  const a = addItem.get('film:1', 'Film A', 'film a').id;
+  const b = addItem.get('film:2', 'Film B', 'film b').id;
+  db.prepare('INSERT INTO favorites (user_id, item_id, created_at) VALUES (902, ?, ?)').run(a, now);
+  db.prepare('INSERT INTO progress (user_id, item_id, position, duration, updated_at) VALUES (902, ?, 600, 5400, ?)').run(b, now);
+  db.prepare(`INSERT INTO user_hidden (user_id, kind, value) VALUES (902, 'country', 'DE')`).run();
+  const saved = createBackup('test');
+  const data = readBackup(saved.name);
+  assert.equal(data.favorites.find((f) => f.user_id === 902).ext_key, 'film:1');
+
+  // Alles weg, alsof het misging; daarna terugzetten.
+  db.prepare('DELETE FROM favorites WHERE user_id = 902').run();
+  db.prepare(`UPDATE users SET theme = 'rood' WHERE id = 902`).run();
+  const result = restoreBackup(data);
+  assert.equal(result.favorites, 1);
+  assert.equal(result.waiting, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE user_id = 902').get().n, 1);
+  assert.equal(db.prepare('SELECT position FROM progress WHERE user_id = 902').get().position, 600);
+  assert.equal(db.prepare('SELECT theme FROM users WHERE id = 902').get().theme, '');
+
+  // Nieuwe server: de films bestaan nog niet. Na het inlezen worden ze alsnog gekoppeld.
+  db.prepare('DELETE FROM items WHERE source_id = 901').run();
+  const fresh = restoreBackup(data);
+  assert.equal(fresh.waiting, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE user_id = 902').get().n, 0);
+  addItem.get('film:1', 'Film A', 'film a');
+  addItem.get('film:2', 'Film B', 'film b');
+  applyPendingRestore();
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE user_id = 902').get().n, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM progress WHERE user_id = 902').get().n, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM settings WHERE key = 'restore_pending'`).get().n, 0);
+
+  assert.throws(() => restoreBackup({ format: 'iets anders' }), /geen Kijkbox-back-up/);
+});
 const { isLocalAddress, trustProxyValue } = await import('../server/network.js');
 
 test('Alleen thuisnetwerk: lokale adressen herkennen', () => {
@@ -406,4 +447,21 @@ test('Wachtwoorden en gebruikersnamen', async () => {
   assert.equal(validUsername('jan.de-boer'), true);
   assert.equal(validUsername('a'), false);
   assert.equal(validUsername('a b'), false);
+});
+
+test('ingebouwde ondertitels herkennen', async () => {
+  const { parseSubtitleStreams } = await import('../server/stream.js');
+  const stderr = [
+    '  Stream #0:0: Video: h264 (High), yuv420p, 1920x1080',
+    '  Stream #0:1(dut): Audio: eac3, 48000 Hz, 5.1',
+    '  Stream #0:2(dut): Subtitle: subrip (default)',
+    '  Stream #0:3[0x1200](eng): Subtitle: ass',
+    '  Stream #0:4(eng): Subtitle: hdmv_pgs_subtitle',
+    '  Stream #0:5: Subtitle: mov_text',
+  ].join('\n');
+  assert.deepEqual(parseSubtitleStreams(stderr), [
+    { index: 2, lang: 'dut', codec: 'subrip' },
+    { index: 3, lang: 'eng', codec: 'ass' },
+    { index: 5, lang: 'und', codec: 'mov_text' },
+  ]);
 });

@@ -11,6 +11,7 @@ const WRAP = 2 ** 33; // PTS loopt na ~26,5 uur over
 // Zo ver terug in de tijd is geen herhaling meer, maar een bron die echt opnieuw begon.
 const NEW_TIMELINE = 180 * 90000;
 const NULL_PID = 0x1fff;
+const MAX_PENDING = 20000; // ~3,7 MB; een videobeeld is ruim kleiner
 
 /** Ligt PTS a na b, rekening houdend met het overlopen van de teller? */
 export function ptsAfter(a, b) {
@@ -127,8 +128,13 @@ export class TsDedupe {
       this.on.set(pid, keep);
     }
     const block = this.on.get(pid) && this.pending.get(pid);
-    if (block) block.packets.push(p);
-    else this.droppedBytes += PACKET;
+    if (block) {
+      block.packets.push(p);
+      // Een spoor zonder nieuwe blokken (zeldzame datastroom) mag niet eindeloos geheugen vasthouden.
+      if (block.packets.length > MAX_PENDING) this.flush(pid, out);
+    } else {
+      this.droppedBytes += PACKET;
+    }
   }
 
   flush(pid, out) {

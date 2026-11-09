@@ -455,7 +455,7 @@ const stage = h('section', { class: 'stage', 'aria-label': 'Speler' },
     h('button', { class: 'icon-btn', 'aria-label': 'Stoppen', onclick: () => stopPlayback() }, icon('close'))),
   stageInfo);
 
-// ---- Ondertitels (via de server van OpenSubtitles)
+// ---- Ondertitels (uit het bestand zelf, anders via de server van OpenSubtitles)
 
 const SUB_KEY = 'kijkbox-ondertitels';
 const SUB_LANGS = { nl: 'Nederlands', en: 'Engels' };
@@ -463,7 +463,25 @@ let subPref = (() => { try { return localStorage.getItem(SUB_KEY) ?? ''; } catch
 const subTracks = {};
 let subRequest = 0;
 
-const subtitlesPossible = () => Boolean(state.subtitles) && (player.item?.type === 'movie' || player.item?.type === 'episode');
+// Taalcodes waarmee ondertitelsporen in videobestanden worden aangeduid.
+const EMBEDDED_LANGS = { nl: ['nl', 'nld', 'dut', 'dutch', 'nederlands'], en: ['en', 'eng', 'english'] };
+let subRefresh = null;
+
+const subtitlesPossible = () => Boolean(state.subtitles || player.embeddedSubs?.length)
+  && (player.item?.type === 'movie' || player.item?.type === 'episode');
+
+/** Ondertitels die in de film zelf zitten. De server zet ze tijdens het afspelen om. */
+async function loadEmbeddedSubs(info, seq) {
+  player.embeddedSubs = null;
+  player.subsUrl = info.url.startsWith('/s/t/') ? info.url.replace(/index\.m3u8$/, 'subs') : null;
+  if (!player.subsUrl || (player.item.type !== 'movie' && player.item.type !== 'episode')) return;
+  try {
+    const data = await (await fetch(player.subsUrl)).json();
+    if (seq !== player.seq || !data.tracks?.length) return;
+    player.embeddedSubs = data.tracks;
+    loadSubtitles();
+  } catch { /* geen ingebouwde ondertitels */ }
+}
 
 function updateCcButtons() {
   const show = subtitlesPossible();
@@ -481,6 +499,7 @@ function updateCcButtons() {
 
 function clearSubtitles() {
   subRequest += 1;
+  clearTimeout(subRefresh);
   for (const track of Object.values(subTracks)) {
     // Van een uitgeschakeld spoor zijn de regels niet te zien en dus ook niet te verwijderen.
     track.mode = 'hidden';
@@ -504,6 +523,12 @@ async function loadSubtitles() {
   const mine = subRequest;
   const lang = subPref;
   const item = player.item;
+  const embedded = player.embeddedSubs?.find((t) => EMBEDDED_LANGS[lang].includes(t.lang));
+  if (embedded) return loadEmbeddedCues(`${player.subsUrl}/${embedded.n}`, lang, item, mine, 0);
+  if (!state.subtitles) {
+    toast(`Deze film heeft geen ${SUB_LANGS[lang].toLowerCase()}e ondertitels.`);
+    return;
+  }
   let data;
   try {
     data = await api('GET', `/api/subtitles/${item.id}?lang=${lang}`);
@@ -520,6 +545,28 @@ async function loadSubtitles() {
     track.addCue(new VTTCue(Math.max(0, cue.start - base), cue.end - base, cue.text));
   }
   track.mode = 'showing';
+}
+
+/**
+ * Ingebouwde ondertitels: het bestand groeit terwijl de server de film omzet, dus zolang hij
+ * niet klaar is komen er elke 15 seconden nieuwe regels bij. Ze lopen gelijk met het beeld.
+ */
+async function loadEmbeddedCues(url, lang, item, mine, have) {
+  let data;
+  try {
+    data = await (await fetch(url)).json();
+  } catch {
+    data = { cues: [], done: false };
+  }
+  if (mine !== subRequest || player.item !== item) return;
+  const track = subTracks[lang] ??= video.addTextTrack('subtitles', SUB_LANGS[lang], lang);
+  track.mode = 'showing';
+  // Zolang het bestand nog groeit, kan de laatste regel half geschreven zijn: die wacht nog even.
+  const cues = data.done ? data.cues ?? [] : (data.cues ?? []).slice(0, -1);
+  for (const cue of cues.slice(have)) track.addCue(new VTTCue(cue.start, cue.end, cue.text));
+  // Nog niets binnen: snel opnieuw kijken. Daarna elke 15 seconden.
+  const next = Math.max(have, cues.length);
+  if (!data.done) subRefresh = setTimeout(() => loadEmbeddedCues(url, lang, item, mine, next), next ? 15000 : 3000);
 }
 
 const player = { item: null, hls: null, seq: 0, mode: null, base: 0, resume: 0, started: false, watchdog: null, lastSave: 0, mediaRetry: false, netRetries: 0, rebufferTimer: null };
@@ -582,6 +629,7 @@ function stopPlayback() {
   saveProgress(true);
   player.seq += 1;
   player.item = null;
+  player.embeddedSubs = null;
   teardownEngine();
   hideMessage();
   stage.classList.remove('active');
@@ -667,6 +715,7 @@ function attach(info, seq) {
     hls.attachMedia(video);
   }
   loadSubtitles();
+  loadEmbeddedSubs(info, seq);
   video.play().catch((err) => {
     // Sommige browsers wachten op een tik voordat er geluid mag klinken. De stream is dan niet stuk.
     if (err.name === 'NotAllowedError' && seq === player.seq) {
@@ -691,6 +740,7 @@ async function start(item, { mode = 'auto', resume = 0 } = {}) {
   }
   player.lastError = null;
   player.item = item;
+  player.embeddedSubs = null;
   player.requested = mode;
   player.started = false;
   player.resume = resume;
@@ -1923,8 +1973,137 @@ function settingsView(container) {
   if (!TV) page.append(pairPanel());
   page.append(hiddenPanel());
   if (state.user.role === 'admin') page.append(sourcesPanel(), usersPanel());
-  if (state.user.role === 'admin' && !TV) page.append(subtitlesPanel(), networkPanel(), updatesPanel());
+  if (state.user.role === 'admin' && !TV) page.append(statusPanel(), subtitlesPanel(), networkPanel(), updatesPanel(), backupsPanel());
   container.replaceChildren(page);
+}
+
+/** Beheerder: wie kijkt er nu wat, hoe druk is de server en hoeveel verbindingen telt de provider. */
+function statusPanel() {
+  const body = h('div', {}, h('p', { class: 'muted small' }, 'Laden…'));
+  const gb = (bytes) => `${(bytes / 1073741824).toFixed(1).replace('.', ',')} GB`;
+  const since = (ms) => {
+    const min = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    return min < 60 ? `${min} min` : `${Math.floor(min / 60)} u ${min % 60} min`;
+  };
+  const uptime = (sec) => (sec < 3600 ? `${Math.round(sec / 60)} min` : sec < 86400 ? `${Math.round(sec / 3600)} uur` : `${Math.round(sec / 86400)} dagen`);
+  const modes = { live: 'live', remux: 'doorgegeven via ffmpeg', transcode: 'omgezet (zwaar voor de server)', direct: 'rechtstreeks doorgegeven' };
+  const row = (label, value) => h('div', { class: 'status-row' }, h('span', { class: 'muted' }, label), h('span', {}, value));
+
+  let timer = null;
+  async function load() {
+    clearTimeout(timer);
+    // Alleen verversen zolang het paneel op het scherm staat.
+    if (!document.body.contains(section) && timer) return;
+    let data;
+    try {
+      data = await api('GET', '/api/status');
+    } catch (err) {
+      body.replaceChildren(h('p', { class: 'error small' }, err.message));
+      timer = setTimeout(load, 10000);
+      return;
+    }
+    const watching = data.playing.length
+      ? data.playing.map((p) => h('div', { class: 'list-item' },
+        h('div', { class: 'grow' },
+          h('div', {}, clean(p.name)),
+          h('div', { class: 'muted small' }, [
+            p.watchers.map((w) => `${w.user} (${w.device})`).join(', ') || 'onbekend wie',
+            modes[p.mode] ?? p.mode,
+            `sinds ${since(p.since)}`,
+          ].join(' · ')),
+          p.failed ? h('div', { class: 'error small' }, p.failed) : null),
+        p.provider ? h('span', { class: 'badge' }, 'verbinding') : null))
+      : [h('p', { class: 'muted small' }, 'Er kijkt nu niemand.')];
+
+    const providers = data.providers.map((p) => (p.error
+      ? row(p.name, p.error)
+      : row(p.name, [
+        p.max ? `${p.active} van ${p.max} verbinding${p.max === 1 ? '' : 'en'} in gebruik` : `${p.active} in gebruik`,
+        p.expires ? `loopt tot ${new Date(p.expires).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}` : null,
+      ].filter(Boolean).join(' · '))));
+
+    const sys = data.system;
+    const used = sys.memTotal - sys.memFree;
+    body.replaceChildren(...[
+      h('h3', {}, 'Nu aan het kijken'), ...watching,
+      providers.length ? h('h3', {}, 'Provider') : null, ...providers,
+      providers.length ? h('p', { class: 'muted small' }, 'De provider telt ook verbindingen van andere apparaten of servers met hetzelfde account.') : null,
+      h('h3', {}, 'Server'),
+      row('Processor', sys.cpu === null ? 'meten…' : `${sys.cpu}% (${sys.cores} kernen)`),
+      row('Geheugen', `${gb(used)} van ${gb(sys.memTotal)} in gebruik, waarvan Kijkbox ${gb(sys.memKijkbox)}`),
+      sys.disk ? row('Opslag', `${gb(sys.disk.free)} vrij van ${gb(sys.disk.total)}`) : null,
+      row('Versie', `${data.version} · draait ${uptime(data.uptime)}`),
+    ].filter(Boolean));
+    timer = setTimeout(load, 5000);
+  }
+
+  const section = h('section', { class: 'panel' },
+    h('h2', { style: 'margin-bottom:6px' }, 'Status'),
+    body);
+  load();
+  return section;
+}
+
+/** Beheerder: back-ups maken, downloaden en terugzetten. */
+function backupsPanel() {
+  const list = h('div', {}, h('p', { class: 'muted small' }, 'Laden…'));
+  const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} kB`;
+  const reasons = { dagelijks: 'automatisch', handmatig: 'met de hand', 'voor-terugzetten': 'vóór terugzetten' };
+
+  async function restore(payload, label) {
+    if (!window.confirm(`${label} terugzetten?\n\nAccounts, bronnen, favorieten, verder kijken en instellingen worden vervangen door die uit de back-up. Er wordt eerst nog een back-up van de huidige stand gemaakt.`)) return;
+    try {
+      const r = await api('POST', '/api/backups/restore', payload);
+      window.alert(`Teruggezet: ${r.users} accounts, ${r.sources} bronnen, ${r.favorites} favorieten en ${r.progress} keer verder kijken.`
+        + (r.waiting ? `\n\n${r.waiting} favorieten of voortgang volgen vanzelf zodra de bronnen opnieuw zijn ingelezen.` : ''));
+      location.reload();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function load() {
+    let rows;
+    try {
+      rows = await api('GET', '/api/backups');
+    } catch (err) {
+      list.replaceChildren(h('p', { class: 'error small' }, err.message));
+      return;
+    }
+    list.replaceChildren(...rows.map((b) => {
+      const reason = Object.entries(reasons).find(([key]) => b.name.includes(key))?.[1] ?? '';
+      return h('div', { class: 'list-item' },
+        h('div', { class: 'grow' }, h('div', {}, dateTime(b.at)), h('div', { class: 'muted small' }, [reason, kb(b.size)].filter(Boolean).join(' · '))),
+        h('a', { class: 'btn compact', href: `/api/backups/${encodeURIComponent(b.name)}`, download: b.name }, 'Downloaden'),
+        h('button', { class: 'btn compact', onclick: () => restore({ name: b.name }, `De back-up van ${dateTime(b.at)}`) }, 'Terugzetten'));
+    }));
+    if (!rows.length) list.append(h('p', { class: 'muted small' }, 'Nog geen back-ups. De eerste wordt vannacht gemaakt, of druk op "Nu back-up maken".'));
+  }
+
+  const upload = h('input', {
+    type: 'file', accept: '.json,application/json',
+    onchange: async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      let data;
+      try {
+        data = JSON.parse(await file.text());
+      } catch {
+        return toast('Dit bestand is geen Kijkbox-back-up.');
+      }
+      restore({ data }, `"${file.name}"`);
+    },
+  });
+
+  load();
+  return h('section', { class: 'panel' },
+    h('h2', { style: 'margin-bottom:6px' }, 'Back-ups'),
+    h('p', { class: 'muted small' }, 'Elke nacht om 03:00 maakt Kijkbox een back-up van accounts, bronnen, favorieten, verder kijken en instellingen; de 10 nieuwste blijven bewaard. De zender- en filmlijsten zitten er niet in, die haalt Kijkbox gewoon opnieuw bij je provider. Let op: een back-up bevat de wachtwoorden van je provider. Bewaar een download dus veilig.'),
+    list,
+    h('div', { class: 'actions', style: 'margin-top:12px' },
+      h('button', { class: 'btn', onclick: async () => { try { await api('POST', '/api/backups'); toast('Back-up gemaakt.'); load(); } catch (err) { toast(err.message); } } }, 'Nu back-up maken'),
+      h('label', { class: 'btn' }, 'Back-up van een andere server terugzetten…', upload)));
 }
 
 /** Beheerder: alleen thuisnetwerk, of ook van buitenaf via een reverse proxy. */

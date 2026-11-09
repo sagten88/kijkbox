@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import readline from 'node:readline';
 import { db, normalize, recomputeVariants } from './db.js';
 import { langRank, titleKey } from './titles.js';
+import { itemsChanged } from './cache.js';
+import { applyPendingRestore } from './backup.js';
 
 const rankCache = new Map();
 import { releaseYear } from './years.js';
@@ -221,10 +223,10 @@ function xtreamAuth(source) {
   return `username=${encodeURIComponent(source.username)}&password=${encodeURIComponent(source.password)}`;
 }
 
-async function xtreamCall(source, action) {
+async function xtreamCall(source, action, timeout = 60000) {
   const suffix = action ? `&action=${action}` : '';
   const url = `${xtreamBase(source)}/player_api.php?${xtreamAuth(source)}${suffix}`;
-  const { res } = await open(url, { userAgent: source.user_agent, timeout: 60000 });
+  const { res } = await open(url, { userAgent: source.user_agent, timeout });
   if (res.statusCode !== 200) {
     res.resume();
     throw new UpstreamError(`De provider antwoordde met foutcode ${res.statusCode}.`);
@@ -235,6 +237,33 @@ async function xtreamCall(source, action) {
     if (err instanceof UpstreamError) throw err;
     throw new UpstreamError('De provider stuurde een onleesbaar antwoord.');
   }
+}
+
+/**
+ * Hoeveel verbindingen de provider nu bij elk Xtream-account telt, ook die van andere apparaten.
+ * Dit is een gewone API-vraag en geen stream, dus het kost zelf geen verbinding.
+ */
+let providerCache = { at: 0, value: null };
+export async function providerStatus() {
+  if (providerCache.value && Date.now() - providerCache.at < 30000) return providerCache.value;
+  const rows = db.prepare("SELECT * FROM sources WHERE type = 'xtream' ORDER BY name").all();
+  const value = await Promise.all(rows.map(async (source) => {
+    const base = { id: source.id, name: source.name };
+    try {
+      const info = (await xtreamCall(source, '', 8000))?.user_info ?? {};
+      return {
+        ...base,
+        active: Number(info.active_cons) || 0,
+        max: Number(info.max_connections) || null,
+        expires: info.exp_date ? Number(info.exp_date) * 1000 : null,
+        status: info.status ?? null,
+      };
+    } catch (err) {
+      return { ...base, error: err instanceof UpstreamError ? err.message : 'De provider is niet bereikbaar.' };
+    }
+  }));
+  providerCache = { at: Date.now(), value };
+  return value;
 }
 
 const streamUrl = (source, kind, id, extension) => {
@@ -454,6 +483,9 @@ export async function refreshSource(id) {
     // Oude rijen pas verwijderen als de nieuwe lijst binnen is, zodat favorieten blijven bestaan.
     db.prepare('DELETE FROM items WHERE source_id = ? AND generation NOT IN (?, 0)').run(id, generation);
     recomputeVariants();
+    itemsChanged();
+    // Favorieten en voortgang uit een teruggezette back-up die op deze bron wachtten.
+    applyPendingRestore();
     const warning = problems.length
       ? `De provider gaf geen ${problems.map((k) => KIND_LABELS[k]).join(' en ')} terug. Probeer later opnieuw te verversen.`
       : '';

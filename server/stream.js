@@ -7,6 +7,7 @@ import { seal, unseal } from './auth.js';
 import { config } from './config.js';
 import { db } from './db.js';
 import { TsDedupe } from './tsdedupe.js';
+import { parseCues } from './subtitles.js';
 import { assertHostAllowed, open, readText, UpstreamError } from './upstream.js';
 
 const VIEWER_TIMEOUT = 20 * 1000;
@@ -79,6 +80,7 @@ export async function serveManifest(req, res) {
   const target = readToken(req, res);
   if (!target) return;
   const { item } = target;
+  touchDirect(item);
   const { token } = req.params;
   const controller = new AbortController();
   res.on('close', () => controller.abort());
@@ -111,7 +113,13 @@ export async function servePassthrough(req, res) {
   const target = readToken(req, res);
   if (!target) return;
   const controller = new AbortController();
-  res.on('close', () => controller.abort());
+  const activity = touchDirect(target.item);
+  activity.open += 1;
+  res.on('close', () => {
+    controller.abort();
+    activity.open -= 1;
+    activity.last = Date.now();
+  });
   const range = /^bytes=\d*-\d*$/.test(req.headers.range ?? '') ? req.headers.range : undefined;
   const { res: upstream } = await open(target.url, { ...requestOptions(target.item), range, signal: controller.signal });
   const status = upstream.statusCode ?? 502;
@@ -133,6 +141,19 @@ export async function servePassthrough(req, res) {
 const sessions = new Map(); // sessie-id -> sessie
 const byKey = new Map(); // item + modus -> sessie
 const viewers = new Map(); // browsertab -> sessie-id
+const direct = new Map(); // item-id -> { item, since, last, open }: streams die de server alleen doorgeeft
+
+/** Houdt bij welke streams rechtstreeks (zonder ffmpeg) door de server lopen, voor de statuspagina. */
+function touchDirect(item) {
+  const now = Date.now();
+  let entry = direct.get(item.id);
+  if (!entry || (!entry.open && now - entry.last > 60000)) {
+    entry = { item, since: now, last: now, open: 0 };
+    direct.set(item.id, entry);
+  }
+  entry.last = now;
+  return entry;
+}
 
 // De iPhone-speler stopt als de afspeellijst langer dan 1,5 keer de segmentduur niet ververst.
 // Langere segmenten geven dus meer speling, ten koste van een paar seconden extra vertraging.
@@ -185,7 +206,25 @@ function ffmpegArgs(session) {
     args.push('-hls_time', '6', '-hls_list_size', '0', '-hls_playlist_type', 'event');
   }
   args.push('-hls_segment_filename', path.join(dir, 'seg%05d.ts'), path.join(dir, 'index.m3u8'));
+  // Ondertitels die in het bestand zitten, via dezelfde verbinding als losse WebVTT-bestanden.
+  for (const [n, track] of (session.subtitleTracks ?? []).entries()) {
+    // flush_packets: elke regel meteen wegschrijven, zodat de speler ze al tijdens het omzetten kan ophalen.
+    args.push('-map', `0:${track.index}`, '-c:s', 'webvtt', '-flush_packets', '1', '-f', 'webvtt', path.join(dir, `sub${n}.vtt`));
+  }
   return args;
+}
+
+// Tekstondertitels die we naar WebVTT kunnen omzetten (beeldondertitels zoals PGS niet).
+const TEXT_SUBTITLES = new Set(['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text']);
+
+/** Ondertitelsporen uit de uitvoer van ffmpeg: "Stream #0:2(dut): Subtitle: subrip (default)". */
+export function parseSubtitleStreams(stderr) {
+  const tracks = [];
+  const re = /Stream #0:(\d+)(?:\[0x[0-9a-f]+\])?(?:\((\w+)\))?: Subtitle: (\w+)/g;
+  for (let m = re.exec(stderr); m; m = re.exec(stderr)) {
+    if (TEXT_SUBTITLES.has(m[3])) tracks.push({ index: Number(m[1]), lang: (m[2] ?? 'und').toLowerCase(), codec: m[3] });
+  }
+  return tracks;
 }
 
 const describe = (tail) => tail.split('\n').filter(Boolean).slice(-2).join(' | ').replace(/https?:\/\/\S+/g, '[link]');
@@ -255,6 +294,9 @@ async function feedLive(session, proc) {
     } catch (err) {
       failures += 1;
       session.feedError = err.message;
+      if (failures <= 3 || failures % 10 === 0) {
+        console.log(`Live item ${session.item.id}: verbinden mislukt (${String(err.message).replace(/https?:\/\/\S+/g, '[link]')}), poging ${failures}`);
+      }
     } finally {
       controller.abort();
     }
@@ -268,7 +310,9 @@ async function feedLive(session, proc) {
       proc.kill('SIGKILL');
       break;
     }
-    await sleep(failures ? Math.min(500 * 2 ** failures, 5000) : 200);
+    // Een "bezet" (509) van de provider is meestal binnen een paar seconden over: in kleine stappen
+    // opnieuw proberen (0,4 / 0,8 / 1,2 … s, hooguit 3 s) in plaats van 1 / 2 / 4 s.
+    await sleep(failures ? Math.min(400 * failures, 3000) : 200);
   }
 }
 
@@ -281,15 +325,27 @@ function launch(session) {
   let tail = '';
   let checked = false;
   proc.stderr.setEncoding('utf8');
+  let head = '';
   proc.stderr.on('data', (chunk) => {
     tail = (tail + chunk).slice(-4000);
     if (checked) return;
-    const video = /Stream #0:\d+[^\n]*?: Video: (\w+)/.exec(tail);
-    if (!video) return;
+    head = (head + chunk).slice(0, 64000);
+    // Pas als ffmpeg alle sporen van de invoer heeft genoemd ("Stream mapping") beslissen.
+    if (!/Stream mapping:/.test(head)) return;
     checked = true;
+    const video = /Stream #0:\d+[^\n]*?: Video: (\w+)/.exec(head);
+    let restart = false;
     // Alleen H.264 speelt overal af. HEVC en anderen worden dus automatisch omgezet.
-    if (!session.transcode && video[1] !== 'h264') {
+    if (video && !session.transcode && video[1] !== 'h264') {
       session.transcode = true;
+      restart = true;
+    }
+    // Films en afleveringen: ingebouwde tekstondertitels meenemen (één keer opnieuw starten).
+    if (!session.live && session.subtitleTracks === undefined) {
+      session.subtitleTracks = parseSubtitleStreams(head);
+      if (session.subtitleTracks.length) restart = true;
+    }
+    if (restart) {
       session.restarting = true;
       proc.kill('SIGKILL');
     }
@@ -301,8 +357,18 @@ function launch(session) {
     if (session.proc !== proc || session.closed) return;
     if (session.restarting) {
       session.restarting = false;
+      session.restartedAt = Date.now();
       fs.rmSync(path.join(session.dir, 'index.m3u8'), { force: true });
       launch(session);
+    } else if (!session.live && code !== 0 && Date.now() - (session.restartedAt ?? 0) < 20000 && (session.retries ?? 0) < 4) {
+      // Net opnieuw gestart (voor omzetten of ondertitels): de provider houdt de vorige verbinding
+      // soms nog een paar seconden bezet. Even wachten en het nog eens proberen.
+      session.retries = (session.retries ?? 0) + 1;
+      setTimeout(() => {
+        if (session.closed) return;
+        fs.rmSync(path.join(session.dir, 'index.m3u8'), { force: true });
+        launch(session);
+      }, 1500 * session.retries);
     } else if (session.failed) {
       /* ffmpeg kon niet starten; de melding staat al klaar */
     } else if (session.live) {
@@ -379,7 +445,7 @@ async function startFfmpeg(item, { cid, transcode, live, start, native }) {
     const id = crypto.randomBytes(16).toString('hex');
     const dir = path.join(config.tempDir, id);
     fs.mkdirSync(dir);
-    session = { id, key, dir, item, url: item.url, live, transcode, start, viewers: new Map() };
+    session = { id, key, dir, item, url: item.url, live, transcode, start, viewers: new Map(), startedAt: Date.now() };
     sessions.set(id, session);
     byKey.set(key, session);
     launch(session);
@@ -505,6 +571,57 @@ export function serveFfmpegFile(req, res) {
   });
 }
 
+/**
+ * Wat er nu speelt, voor de statuspagina. `provider` zegt of de server daarvoor op dit moment
+ * een verbinding met de provider openhoudt (een film die al helemaal is omgezet doet dat niet meer).
+ */
+export function playbackStatus() {
+  const now = Date.now();
+  const list = [];
+  for (const s of sessions.values()) {
+    if (s.closed) continue;
+    list.push({
+      itemId: s.item.id, name: s.item.name, type: s.item.type,
+      mode: s.live ? 'live' : s.transcode ? 'transcode' : 'remux',
+      since: s.startedAt ?? now, cids: [...s.viewers.keys()],
+      provider: !s.finished && !s.failed, failed: s.failed ?? null,
+    });
+  }
+  for (const [id, d] of direct) {
+    if (!d.open && now - d.last > 30000) {
+      direct.delete(id);
+      continue;
+    }
+    list.push({
+      itemId: id, name: d.item.name, type: d.item.type, mode: 'direct',
+      since: d.since, cids: null, provider: d.open > 0 || now - d.last < 10000, failed: null,
+    });
+  }
+  return list;
+}
+
+/** Welke ingebouwde ondertitels deze sessie heeft (taal per spoor). */
+export function serveSubtitleList(req, res) {
+  const session = sessions.get(req.params.sid);
+  if (!session) return res.status(404).json({ error: 'Niet gevonden.' });
+  res.set('Cache-Control', 'no-store').json({
+    tracks: (session.subtitleTracks ?? []).map((t, n) => ({ n, lang: t.lang, codec: t.codec })),
+    done: Boolean(session.finished),
+  });
+}
+
+/** De regels van één ingebouwd ondertitelspoor. Tijdens het omzetten groeit het bestand nog. */
+export async function serveSubtitleCues(req, res) {
+  const session = sessions.get(req.params.sid);
+  const n = Number(req.params.n);
+  if (!session || !Number.isInteger(n) || !session.subtitleTracks?.[n]) return res.status(404).json({ error: 'Niet gevonden.' });
+  let text = '';
+  try {
+    text = await fs.promises.readFile(path.join(session.dir, `sub${n}.vtt`), 'utf8');
+  } catch { /* nog niet aangemaakt */ }
+  res.set('Cache-Control', 'no-store').json({ cues: parseCues(text), done: Boolean(session.finished) });
+}
+
 export function serveLogo(req, res) {
   const item = getItem.get(Number(req.params.id));
   if (!item?.logo) return res.status(404).end();
@@ -514,7 +631,7 @@ export function serveLogo(req, res) {
 /** Grote achtergrondafbeelding van een film of serie (via de server, net als de logo's). */
 export function serveBackdrop(req, res) {
   const item = getItem.get(Number(req.params.id));
-  if (!item?.backdrop) return res.status(404).end();
+  if (!item?.backdrop || item.backdrop === '-') return res.status(404).end();
   return serveImage(res, item, item.backdrop);
 }
 
