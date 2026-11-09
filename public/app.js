@@ -123,7 +123,8 @@ const cid = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toSt
 const TV = /KijkboxTV/.test(navigator.userAgent) || new URLSearchParams(location.search).has('tv');
 if (TV) {
   document.body.classList.add('tv');
-  document.head.append(h('link', { rel: 'stylesheet', href: '/tv.css' }));
+  const version = document.querySelector('meta[name=kijkbox-version]')?.content ?? '';
+  document.head.append(h('link', { rel: 'stylesheet', href: `/tv.css?v=${version}` }));
 }
 
 // ---- Kleurthema per account (leeg = standaardgeel). Moet gelijk lopen met THEMES op de server.

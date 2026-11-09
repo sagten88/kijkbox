@@ -1037,7 +1037,18 @@ app.get('/s/t/:sid/:cid/:file', requireUser, serveFfmpegFile);
 app.get('/vendor/hls.min.js', (req, res) => {
   res.sendFile(path.join(rootDir, 'node_modules', 'hls.js', 'dist', 'hls.min.js'), { maxAge: '7d' });
 });
+// De startpagina noemt app.js en styles.css met het versienummer erachter. Zo krijgt elke versie
+// eigen adressen en kan geen enkele cache (browser, tv-app, reverse proxy, Cloudflare) na een
+// update nog de oude code geven. De startpagina zelf wordt nooit bewaard.
+const indexHtml = fs.readFileSync(path.join(rootDir, 'public', 'index.html'), 'utf8')
+  .replace(/(href|src)="\/(app\.js|styles\.css)"/g, (_, attr, file) => `${attr}="/${file}?v=${config.version}"`)
+  .replace('<head>', `<head>\n  <meta name="kijkbox-version" content="${config.version}">`);
+const sendIndex = (req, res) => {
+  res.set({ 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Surrogate-Control': 'no-store' }).type('html').send(indexHtml);
+};
+app.get(['/', '/index.html'], sendIndex);
 app.use(express.static(path.join(rootDir, 'public'), {
+  index: false,
   setHeaders: (res) => res.set('Cache-Control', 'no-cache'),
 }));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Niet gevonden.' }));
