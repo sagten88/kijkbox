@@ -78,4 +78,6 @@ $pass = [IO.File]::ReadAllText($passFile).Trim()
 Invoke-Tool "$bt\zipalign.exe" @('-f', '-p', '4', "$out\base.apk", "$out\aligned.apk")
 Invoke-Tool "$bt\apksigner.bat" @('sign', '--ks', $keystore, '--ks-pass', "pass:$pass", '--out', "$root\kijkbox-tv.apk", "$out\aligned.apk")
 Invoke-Tool "$bt\apksigner.bat" @('verify', "$root\kijkbox-tv.apk")
+# Elke Kijkbox-server biedt de app aan op /tv.apk (installeren met de app Downloader op de tv).
+Copy-Item "$root\kijkbox-tv.apk" (Join-Path $root '..\public\tv.apk') -Force
 "klaar: $root\kijkbox-tv.apk ($([Math]::Round((Get-Item "$root\kijkbox-tv.apk").Length / 1KB)) KB, versie 1.$Version)"

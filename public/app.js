@@ -372,7 +372,11 @@ function pairPanel() {
   return h('section', { class: 'panel' },
     h('h2', {}, 'Tv koppelen'),
     h('p', { class: 'muted small' }, 'Open Kijkbox op je tv en vul hier de code in die daar staat. De tv logt dan in met jouw account, zodat je overal verder kijkt waar je was. Vul alleen een code in die op je eigen tv staat.'),
-    form);
+    form,
+    h('p', { class: 'muted small', style: 'margin-top:12px' },
+      'Nog geen app op je Google TV of Android TV? Installeer de gratis app Downloader en typ daarin: ',
+      h('b', {}, `${location.origin}/tv.apk`),
+      '. Het adres van deze server is ', h('b', {}, location.host), '.'));
 }
 
 function loginScreen() {
