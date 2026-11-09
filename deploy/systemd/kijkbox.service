@@ -1,0 +1,22 @@
+[Unit]
+Description=Kijkbox IPTV-website
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kijkbox
+Group=kijkbox
+WorkingDirectory=/opt/kijkbox
+EnvironmentFile=/etc/kijkbox/kijkbox.env
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=3
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+ReadWritePaths=/var/lib/kijkbox
+
+[Install]
+WantedBy=multi-user.target

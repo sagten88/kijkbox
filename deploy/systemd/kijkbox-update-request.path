@@ -1,0 +1,9 @@
+[Unit]
+Description=Kijkbox: verzoek van de website om te updaten
+
+[Path]
+PathExists=/var/lib/kijkbox/update-request
+Unit=kijkbox-update-request.service
+
+[Install]
+WantedBy=multi-user.target

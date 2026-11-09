@@ -1,0 +1,6 @@
+node_modules/
+data/
+tv-app/build/
+tv-app/signing/
+tv-app/*.apk
+tv-app/*.idsig

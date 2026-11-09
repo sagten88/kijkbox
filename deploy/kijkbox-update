@@ -1,0 +1,163 @@
+#!/bin/bash
+# Kijkbox bijwerken. Draait als root in de container.
+#
+#   kijkbox-update check     nieuwe versie zoeken (en installeren als automatisch aan staat)
+#   kijkbox-update install   nieuwste versie installeren zodra niemand kijkt
+#   kijkbox-update request   verzoek van de website afhandelen (check of install)
+#   kijkbox-update status    laten zien wat er geïnstalleerd is en wat de nieuwste is
+#
+# Alleen versies (tags) met een geldige handtekening van de uitgever worden geïnstalleerd.
+# De sleutel om die te controleren staat in /etc/kijkbox/allowed_signers.
+set -euo pipefail
+
+SRC=/opt/kijkbox-src
+APP=/opt/kijkbox
+DATA=/var/lib/kijkbox
+ETC=/etc/kijkbox
+STATUS="$DATA/update-status.json"
+REQUEST="$DATA/update-request"
+SETTINGS="$DATA/update-config.json"
+LOCK=/run/kijkbox-update.lock
+IDLE_SECONDS=30
+MAX_WAIT_SECONDS=$((6 * 3600))
+
+export GIT_SSH_COMMAND="ssh -i $ETC/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$ETC/known_hosts"
+git_() { git -C "$SRC" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$ETC/allowed_signers" -c advice.detachedHead=false "$@"; }
+
+log() { echo "kijkbox-update: $*"; }
+
+installed_version() { node -p "require('$APP/package.json').version" 2>/dev/null || echo "0.0.0"; }
+
+# Status voor de website (Instellingen > Updates). JSON via node, zodat tekens netjes ontsnapt worden.
+write_status() { # state latest message notes
+  STATE="$1" LATEST="$2" MESSAGE="$3" NOTES="$4" node -e '
+    const fs = require("fs");
+    const out = { state: process.env.STATE, latest: process.env.LATEST || null, message: process.env.MESSAGE || "",
+      notes: process.env.NOTES || "", checkedAt: Date.now() };
+    fs.writeFileSync(process.argv[1] + ".tmp", JSON.stringify(out));
+    fs.renameSync(process.argv[1] + ".tmp", process.argv[1]);
+  ' "$STATUS"
+  chown kijkbox:kijkbox "$STATUS" 2>/dev/null || true
+}
+
+auto_enabled() { node -p "Boolean(JSON.parse(require('fs').readFileSync('$SETTINGS','utf8')).auto)" 2>/dev/null | grep -qx true; }
+
+# Nieuwste versie met een geldige handtekening. Zet LATEST_TAG, LATEST en NOTES.
+find_latest() {
+  git_ fetch --quiet --force --prune --tags origin
+  LATEST_TAG=""
+  for tag in $(git_ tag -l 'v[0-9]*' --sort=-v:refname); do
+    if git_ verify-tag "$tag" >/dev/null 2>&1; then LATEST_TAG="$tag"; break; fi
+    log "versie $tag overgeslagen: geen geldige handtekening"
+  done
+  [ -n "$LATEST_TAG" ] || { LATEST=""; NOTES=""; return 1; }
+  LATEST="${LATEST_TAG#v}"
+  NOTES="$(git_ tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$LATEST_TAG" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
+}
+
+newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]; }
+
+wait_until_idle() {
+  local waited=0 idle=0
+  while [ "$idle" -lt "$IDLE_SECONDS" ]; do
+    if pgrep -x ffmpeg >/dev/null; then idle=0; else idle=$((idle + 5)); fi
+    sleep 5
+    waited=$((waited + 5))
+    [ "$waited" -lt "$MAX_WAIT_SECONDS" ] || return 1
+  done
+}
+
+install_latest() {
+  local current
+  current="$(installed_version)"
+  if ! find_latest; then write_status error "" "Geen versie met een geldige handtekening gevonden." ""; return 1; fi
+  if ! newer "$LATEST" "$current"; then
+    write_status idle "$LATEST" "" "$NOTES"
+    log "versie $current is al de nieuwste"
+    return 0
+  fi
+  write_status waiting "$LATEST" "" "$NOTES"
+  log "wacht tot niemand kijkt om $LATEST te installeren"
+  if ! wait_until_idle; then write_status error "$LATEST" "Er werd te lang gekeken; de update volgt later." "$NOTES"; return 1; fi
+
+  write_status installing "$LATEST" "" "$NOTES"
+  git_ checkout --quiet --force "$LATEST_TAG"
+  git_ verify-tag "$LATEST_TAG" >/dev/null 2>&1 || { write_status error "$LATEST" "Handtekening klopt niet." "$NOTES"; return 1; }
+
+  # Nieuwe versie naast de oude opbouwen; pas omwisselen als alles klaar is.
+  rm -rf "$APP.new"
+  mkdir -p "$APP.new"
+  cp -a "$SRC/server" "$SRC/public" "$SRC/deploy" "$SRC/package.json" "$SRC/package-lock.json" "$APP.new/"
+  if ! (cd "$APP.new" && npm ci --omit=dev --no-audit --no-fund --loglevel=error); then
+    rm -rf "$APP.new"
+    write_status error "$LATEST" "Onderdelen installeren mislukte." "$NOTES"
+    return 1
+  fi
+  chown -R root:root "$APP.new"
+
+  rm -rf "$APP.old"
+  mv "$APP" "$APP.old"
+  mv "$APP.new" "$APP"
+  install_system_files
+  systemctl restart kijkbox
+  sleep 8
+  if ! systemctl is-active --quiet kijkbox; then
+    log "nieuwe versie start niet; terug naar $current"
+    rm -rf "$APP.failed"
+    mv "$APP" "$APP.failed"
+    mv "$APP.old" "$APP"
+    install_system_files
+    systemctl restart kijkbox
+    write_status error "$LATEST" "Versie $LATEST startte niet; versie $current is teruggezet." "$NOTES"
+    return 1
+  fi
+  write_status idle "$LATEST" "" "$NOTES"
+  log "versie $LATEST geïnstalleerd"
+}
+
+# Systemd-bestanden en dit programma zelf bijwerken vanuit de geïnstalleerde versie.
+install_system_files() {
+  install -m 0644 "$APP"/deploy/systemd/*.service "$APP"/deploy/systemd/*.timer "$APP"/deploy/systemd/*.path /etc/systemd/system/
+  install -m 0755 "$APP/deploy/kijkbox-update" /usr/local/bin/kijkbox-update
+  systemctl daemon-reload
+}
+
+check() {
+  if find_latest; then
+    if newer "$LATEST" "$(installed_version)" && [ "${1:-}" = "auto" ] && auto_enabled; then
+      install_latest
+    else
+      write_status idle "$LATEST" "" "$NOTES"
+      log "geïnstalleerd: $(installed_version), nieuwste: $LATEST"
+    fi
+  else
+    write_status error "" "Kon geen versie ophalen. Heeft deze server toegang tot de repository?" ""
+    return 1
+  fi
+}
+
+main() {
+  exec 9>"$LOCK"
+  flock -n 9 || { log "er loopt al een update"; exit 0; }
+  case "${1:-status}" in
+    check) write_status checking "" "" ""; check auto ;;
+    install) install_latest ;;
+    request)
+      local action
+      action="$(cat "$REQUEST" 2>/dev/null || true)"
+      rm -f "$REQUEST"
+      case "$action" in
+        install) install_latest ;;
+        *) write_status checking "" "" ""; check manual ;;
+      esac
+      ;;
+    status)
+      find_latest || true
+      echo "geïnstalleerd: $(installed_version)"
+      echo "nieuwste:      ${LATEST:-onbekend}"
+      ;;
+    *) echo "gebruik: kijkbox-update check|install|status"; exit 2 ;;
+  esac
+}
+
+main "$@"

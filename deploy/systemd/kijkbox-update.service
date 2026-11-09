@@ -1,0 +1,8 @@
+[Unit]
+Description=Kijkbox: kijken of er een nieuwe versie is
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/kijkbox-update check

@@ -1,0 +1,24 @@
+# Voor een VPS met een eigen domeinnaam. Zet je domein in de Caddyfile
+# en start met: docker compose up -d --build
+services:
+  kijkbox:
+    build: .
+    restart: unless-stopped
+    environment:
+      TRUST_PROXY: "1"
+      SECURE_COOKIES: "true"
+    volumes:
+      - ./data:/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  caddy-data:

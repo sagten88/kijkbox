@@ -1,0 +1,10 @@
+[Unit]
+Description=Kijkbox: elke nacht naar updates kijken
+
+[Timer]
+OnCalendar=*-*-* 03:30
+RandomizedDelaySec=45min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

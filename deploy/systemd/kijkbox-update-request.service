@@ -1,0 +1,7 @@
+[Unit]
+Description=Kijkbox: verzoek van de website afhandelen
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/kijkbox-update request

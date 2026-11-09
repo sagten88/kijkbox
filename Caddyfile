@@ -1,0 +1,6 @@
+# Vervang tv.jouwdomein.nl door je eigen domein. Caddy regelt HTTPS dan automatisch.
+tv.jouwdomein.nl {
+	reverse_proxy kijkbox:3000 {
+		flush_interval -1
+	}
+}
