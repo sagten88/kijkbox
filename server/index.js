@@ -99,6 +99,7 @@ const LOOK_OPTIONS = {
   font: ['', 'rounded', 'serif', 'mono'],
   cards: ['', 'small', 'large'],
   background: ['', 'gradient', 'glass'],
+  pattern: ['', 'dots', 'grid', 'lines', 'waves', 'stars', 'bubbles', 'topo', 'aurora'],
 };
 function parseLook(value) {
   let raw = {};

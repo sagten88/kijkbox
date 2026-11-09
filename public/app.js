@@ -173,13 +173,16 @@ const LOOK_CHOICES = [
   ['font', 'Letters', [['', 'Standaard'], ['rounded', 'Zacht'], ['serif', 'Klassiek'], ['mono', 'Typemachine']]],
   ['cards', 'Posters', [['', 'Normaal'], ['small', 'Klein'], ['large', 'Groot']]],
   ['background', 'Achtergrond', [['', 'Effen'], ['gradient', 'Kleurverloop'], ['glass', 'Glas']]],
+  // Patronen worden met voorbeeldtegels gekozen (zie patternPicker), niet met knoppen.
+  ['pattern', 'Patroon', [['', 'Geen'], ['dots', 'Stippen'], ['grid', 'Raster'], ['lines', 'Strepen'], ['waves', 'Golven'],
+    ['stars', 'Sterren'], ['bubbles', 'Bubbels'], ['topo', 'Hoogtelijnen'], ['aurora', 'Noorderlicht']]],
 ];
 const LOOK_PRESETS = [
   ['Standaard', {}],
-  ['Bioscoop', { corners: 'square', font: 'serif', cards: 'large', background: 'gradient' }],
-  ['Speels', { corners: 'round', buttons: 'pill', font: 'rounded', background: 'gradient' }],
-  ['Retro', { corners: 'square', buttons: 'outline', font: 'mono' }],
-  ['Glas', { corners: 'round', buttons: 'pill', background: 'glass' }],
+  ['Bioscoop', { corners: 'square', font: 'serif', cards: 'large', background: 'gradient', pattern: 'stars' }],
+  ['Speels', { corners: 'round', buttons: 'pill', font: 'rounded', background: 'gradient', pattern: 'bubbles' }],
+  ['Retro', { corners: 'square', buttons: 'outline', font: 'mono', pattern: 'grid' }],
+  ['Glas', { corners: 'round', buttons: 'pill', background: 'glass', pattern: 'aurora' }],
 ];
 const LOOK_KEY = 'kijkbox-stijl';
 
@@ -1924,7 +1927,9 @@ function appearancePanel() {
           type: 'button', class: `chip${same(preset) ? ' active' : ''}`, 'aria-pressed': String(same(preset)),
           onclick: () => save({ ...Object.fromEntries(LOOK_CHOICES.map(([key]) => [key, ''])), ...preset }),
         }, label)))),
-      ...LOOK_CHOICES.map(([key, label, options]) => choiceRow(label, options, look[key] ?? '', (value) => save({ ...look, [key]: value }))));
+      ...LOOK_CHOICES.filter(([key]) => key !== 'pattern')
+        .map(([key, label, options]) => choiceRow(label, options, look[key] ?? '', (value) => save({ ...look, [key]: value }))),
+      patternPicker(look.pattern ?? '', (value) => save({ ...look, pattern: value })));
   }
   drawLooks();
 
@@ -1948,6 +1953,16 @@ function appearancePanel() {
     TV && choiceRow('Tekstgrootte op deze tv', TV_SIZES, localStorage.getItem(TV_SIZE_KEY) ?? '1', applyTvSize),
     h('h3', {}, 'Eigen stijl'),
     looks);
+}
+
+/** Achtergrondpatroon kiezen met kleine voorbeelden (in jouw kleur). */
+function patternPicker(current, onPick) {
+  const options = LOOK_CHOICES.find(([key]) => key === 'pattern')[2];
+  return h('div', { class: 'theme-picker' }, h('div', { class: 'muted small' }, 'Achtergrondpatroon (volgt je kleur)'),
+    h('div', { class: 'pattern-grid' }, options.map(([value, label]) => h('button', {
+      type: 'button', class: `pattern-choice${value === current ? ' active' : ''}`, 'aria-pressed': String(value === current),
+      onclick: () => onPick(value),
+    }, h('span', { class: `swatch-box pat-${value || 'none'}` }), label))));
 }
 
 function avatarPicker() {
