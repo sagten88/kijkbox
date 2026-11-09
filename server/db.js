@@ -163,6 +163,15 @@ if (db.prepare('PRAGMA user_version').get().user_version < 4) {
   }
   db.exec('PRAGMA user_version = 4; COMMIT');
 }
+// Versie 5: tijdelijk wachtwoord (eerst zelf een nieuw kiezen), profielfoto en eigen thema per account.
+if (db.prepare('PRAGMA user_version').get().user_version < 5) {
+  db.exec(`
+    ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN look TEXT NOT NULL DEFAULT '';
+    PRAGMA user_version = 5;
+  `);
+}
 db.exec(`
 CREATE INDEX IF NOT EXISTS items_by_title ON items(type, title_key, lang_rank);
 CREATE INDEX IF NOT EXISTS items_primary ON items(type, is_primary, sort);

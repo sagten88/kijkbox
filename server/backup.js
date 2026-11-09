@@ -30,7 +30,7 @@ function snapshot() {
     version: 1,
     app: config.version,
     createdAt: Date.now(),
-    users: db.prepare('SELECT id, username, password_hash, role, created_at, theme, appearance FROM users').all(),
+    users: db.prepare('SELECT id, username, password_hash, role, created_at, theme, appearance, avatar, look, must_change_password FROM users').all(),
     sources: db.prepare(`SELECT id, name, type, url, username, password, content, epg_url, stream_format, user_agent FROM sources`).all(),
     settings: db.prepare(`SELECT key, value FROM settings WHERE key <> 'restore_pending'`).all(),
     hidden: db.prepare('SELECT user_id, kind, value FROM user_hidden').all(),
@@ -133,10 +133,14 @@ export function restoreBackup(data) {
     // Accounts: bijwerken of toevoegen (geen REPLACE: dat zou sessies en favorieten wissen).
     const keepUsers = users.map((u) => u.id);
     db.prepare(`DELETE FROM users WHERE id NOT IN (${keepUsers.map(() => '?').join(',')})`).run(...keepUsers);
-    const upsertUser = db.prepare(`INSERT INTO users (id, username, password_hash, role, created_at, theme, appearance)
-      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET username = excluded.username,
-      password_hash = excluded.password_hash, role = excluded.role, theme = excluded.theme, appearance = excluded.appearance`);
-    for (const u of users) upsertUser.run(u.id, u.username, u.password_hash, u.role, Number(u.created_at) || Date.now(), u.theme ?? '', u.appearance ?? '');
+    const upsertUser = db.prepare(`INSERT INTO users (id, username, password_hash, role, created_at, theme, appearance, avatar, look, must_change_password)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET username = excluded.username,
+      password_hash = excluded.password_hash, role = excluded.role, theme = excluded.theme, appearance = excluded.appearance,
+      avatar = excluded.avatar, look = excluded.look, must_change_password = excluded.must_change_password`);
+    for (const u of users) {
+      upsertUser.run(u.id, u.username, u.password_hash, u.role, Number(u.created_at) || Date.now(), u.theme ?? '', u.appearance ?? '',
+        typeof u.avatar === 'string' ? u.avatar : '', typeof u.look === 'string' ? u.look : '', u.must_change_password ? 1 : 0);
+    }
 
     // Bronnen: dezelfde nummers houden, zodat favorieten en voortgang erbij blijven passen.
     const keepSources = sources.map((s) => s.id);

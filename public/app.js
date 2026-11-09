@@ -27,6 +27,7 @@ const ICONS = {
   down: '<path d="m6 9 6 6 6-6"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   back: '<path d="m15 5-7 7 7 7"/>',
+  right: '<path d="m9 5 7 7-7 7"/>',
   play: '<path d="M7 4v16l13-8z"/>',
   refresh: '<path d="M20 11a8 8 0 0 0-14-5L3 9m0-5v5h5M4 13a8 8 0 0 0 14 5l3-3m0 5v-5h-5"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
@@ -59,6 +60,11 @@ async function api(method, path, body) {
     throw new Error('De server is niet bereikbaar.');
   }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 403 && data.mustChangePassword && state.user && !state.user.mustChangePassword) {
+    state.user.mustChangePassword = true;
+    stopPlayback();
+    renderApp();
+  }
   if (res.status === 401 && state.user && path !== '/api/login') {
     state.user = null;
     stopPlayback();
@@ -134,13 +140,57 @@ const THEMES = [
 ];
 const THEME_KEY = 'kijkbox-thema';
 
+const isCustomColor = (value) => /^#[0-9a-f]{6}$/i.test(value ?? '');
+
+/** De kleur bij een thema: een van de vaste kleuren, of een eigen kleur (#rrggbb). */
+function themeColor(name) {
+  if (isCustomColor(name)) return name;
+  return (THEMES.find(([key]) => key === (name ?? '')) ?? THEMES[0])[2];
+}
+
+/** Donkere of witte tekst op een gekleurde knop, afhankelijk van hoe licht de kleur is. */
+function inkFor(color) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.32 ? '#16130a' : '#ffffff';
+}
+
 function applyTheme(name) {
-  const theme = THEMES.find(([key]) => key === name) ?? THEMES[0];
-  document.documentElement.style.setProperty('--accent', theme[2]);
-  try { localStorage.setItem(THEME_KEY, theme[0]); } catch {}
+  const color = themeColor(name);
+  document.documentElement.style.setProperty('--accent', color);
+  document.documentElement.style.setProperty('--accent-ink', inkFor(color));
+  try { localStorage.setItem(THEME_KEY, isCustomColor(name) ? name : (THEMES.find(([key]) => key === name) ?? THEMES[0])[0]); } catch {}
 }
 // Meteen de laatst gebruikte kleur, zodat er bij het openen geen geel flitst.
 try { applyTheme(localStorage.getItem(THEME_KEY) ?? ''); } catch {}
+
+// ---- Eigen stijl per account: hoeken, knoppen, letters, postergrootte en achtergrond.
+// Moet gelijk lopen met LOOK_OPTIONS op de server.
+const LOOK_CHOICES = [
+  ['corners', 'Hoeken', [['', 'Normaal'], ['round', 'Rond'], ['square', 'Strak']]],
+  ['buttons', 'Knoppen', [['', 'Gevuld'], ['pill', 'Pil'], ['outline', 'Omlijnd']]],
+  ['font', 'Letters', [['', 'Standaard'], ['rounded', 'Zacht'], ['serif', 'Klassiek'], ['mono', 'Typemachine']]],
+  ['cards', 'Posters', [['', 'Normaal'], ['small', 'Klein'], ['large', 'Groot']]],
+  ['background', 'Achtergrond', [['', 'Effen'], ['gradient', 'Kleurverloop'], ['glass', 'Glas']]],
+];
+const LOOK_PRESETS = [
+  ['Standaard', {}],
+  ['Bioscoop', { corners: 'square', font: 'serif', cards: 'large', background: 'gradient' }],
+  ['Speels', { corners: 'round', buttons: 'pill', font: 'rounded', background: 'gradient' }],
+  ['Retro', { corners: 'square', buttons: 'outline', font: 'mono' }],
+  ['Glas', { corners: 'round', buttons: 'pill', background: 'glass' }],
+];
+const LOOK_KEY = 'kijkbox-stijl';
+
+function applyLook(look) {
+  const root = document.documentElement;
+  for (const [key] of LOOK_CHOICES) {
+    if (look?.[key]) root.dataset[key] = look[key];
+    else delete root.dataset[key];
+  }
+  try { localStorage.setItem(LOOK_KEY, JSON.stringify(look ?? {})); } catch {}
+}
+try { applyLook(JSON.parse(localStorage.getItem(LOOK_KEY) || '{}')); } catch {}
 
 // ---- Weergave per account: donker (standaard), licht of OLED-zwart
 const APPEARANCES = [['', 'Donker'], ['light', 'Licht'], ['oled', 'OLED-zwart']];
@@ -225,9 +275,69 @@ function showProfiles() {
   renderApp();
 }
 
-function avatar(profile) {
-  const color = (THEMES.find(([key]) => key === (profile.theme ?? '')) ?? THEMES[0])[2];
-  return h('div', { class: 'avatar', style: `--c:${color}` }, (profile.username[0] ?? '?').toUpperCase());
+// Profielfoto's: eenvoudige figuurtjes op de kleur van het account (100 x 100).
+const W = '#fff';
+const D = '#23262d';
+const AVATAR_ART = {
+  a1: ['Kat', `<path d="M26 46 30 16l18 18zM74 46 70 16 52 34z" fill="${W}"/><circle cx="50" cy="58" r="28" fill="${W}"/>
+    <circle cx="40" cy="55" r="3.6" fill="${D}"/><circle cx="60" cy="55" r="3.6" fill="${D}"/><path d="m46 63 4 4 4-4z" fill="#f08aa5"/>
+    <path d="M20 62h14M21 69l13-3M80 62H66M79 69l-13-3" stroke="${D}" stroke-width="2" stroke-linecap="round"/>`],
+  a2: ['Vos', `<path d="M22 40 26 12l18 20zM78 40 74 12 56 32z" fill="${W}"/><path d="M20 40Q50 26 80 40L50 84z" fill="${W}"/>
+    <path d="M20 40 50 84 36 54z" fill="rgba(0,0,0,.08)"/><circle cx="40" cy="50" r="3.6" fill="${D}"/><circle cx="60" cy="50" r="3.6" fill="${D}"/>
+    <circle cx="50" cy="78" r="4.5" fill="${D}"/>`],
+  a3: ['Robot', `<path d="M50 32V20" stroke="${D}" stroke-width="3"/><circle cx="50" cy="18" r="5" fill="${D}"/>
+    <rect x="22" y="46" width="7" height="14" rx="3" fill="${W}"/><rect x="71" y="46" width="7" height="14" rx="3" fill="${W}"/>
+    <rect x="27" y="32" width="46" height="44" rx="10" fill="${W}"/><circle cx="40" cy="50" r="6" fill="${D}"/><circle cx="60" cy="50" r="6" fill="${D}"/>
+    <circle cx="42" cy="48" r="1.8" fill="${W}"/><circle cx="62" cy="48" r="1.8" fill="${W}"/><rect x="39" y="63" width="22" height="5" rx="2.5" fill="${D}"/>`],
+  a4: ['Alien', `<path d="M38 28 30 14M62 28l8-14" stroke="${W}" stroke-width="3" stroke-linecap="round"/><circle cx="30" cy="13" r="4" fill="${W}"/>
+    <circle cx="70" cy="13" r="4" fill="${W}"/><ellipse cx="50" cy="55" rx="26" ry="30" fill="${W}"/>
+    <ellipse cx="39" cy="54" rx="7" ry="11" transform="rotate(-25 39 54)" fill="${D}"/><ellipse cx="61" cy="54" rx="7" ry="11" transform="rotate(25 61 54)" fill="${D}"/>
+    <path d="M44 72q6 4 12 0" stroke="${D}" stroke-width="2.5" fill="none" stroke-linecap="round"/>`],
+  a5: ['Spookje', `<path d="M27 82V48a23 23 0 0 1 46 0v34l-7.7-6-7.6 6-7.7-6-7.7 6-7.6-6z" fill="${W}"/>
+    <ellipse cx="42" cy="50" rx="4" ry="5.5" fill="${D}"/><ellipse cx="58" cy="50" rx="4" ry="5.5" fill="${D}"/><ellipse cx="50" cy="62" rx="3.5" ry="4.5" fill="${D}"/>`],
+  a6: ['Beer', `<circle cx="30" cy="34" r="11" fill="${W}"/><circle cx="70" cy="34" r="11" fill="${W}"/><circle cx="30" cy="34" r="5" fill="rgba(0,0,0,.1)"/>
+    <circle cx="70" cy="34" r="5" fill="rgba(0,0,0,.1)"/><circle cx="50" cy="57" r="27" fill="${W}"/><ellipse cx="50" cy="66" rx="12" ry="9" fill="rgba(0,0,0,.1)"/>
+    <ellipse cx="50" cy="62" rx="4.5" ry="3.3" fill="${D}"/><circle cx="40" cy="51" r="3.4" fill="${D}"/><circle cx="60" cy="51" r="3.4" fill="${D}"/>`],
+  a7: ['Uil', `<path d="M26 36 28 20l12 10zM74 36l-2-16-12 10z" fill="${W}"/><ellipse cx="50" cy="57" rx="27" ry="28" fill="${W}"/>
+    <circle cx="39" cy="50" r="10" fill="none" stroke="${D}" stroke-width="3"/><circle cx="61" cy="50" r="10" fill="none" stroke="${D}" stroke-width="3"/>
+    <circle cx="39" cy="50" r="4" fill="${D}"/><circle cx="61" cy="50" r="4" fill="${D}"/><path d="m45 62h10l-5 8z" fill="#f5a524"/>`],
+  a8: ['Kikker', `<circle cx="33" cy="40" r="11" fill="${W}"/><circle cx="67" cy="40" r="11" fill="${W}"/><ellipse cx="50" cy="62" rx="31" ry="21" fill="${W}"/>
+    <circle cx="33" cy="40" r="4.5" fill="${D}"/><circle cx="67" cy="40" r="4.5" fill="${D}"/>
+    <path d="M35 64q15 11 30 0" stroke="${D}" stroke-width="3" fill="none" stroke-linecap="round"/>`],
+  a9: ['Pinguïn', `<circle cx="50" cy="54" r="29" fill="${D}"/><circle cx="41" cy="57" r="12" fill="${W}"/><circle cx="59" cy="57" r="12" fill="${W}"/>
+    <ellipse cx="50" cy="66" rx="14" ry="10" fill="${W}"/><circle cx="42" cy="54" r="3.3" fill="${D}"/><circle cx="58" cy="54" r="3.3" fill="${D}"/>
+    <path d="M44 62h12l-6 7z" fill="#f5a524"/>`],
+  a10: ['Astronaut', `<rect x="30" y="74" width="40" height="14" rx="5" fill="${W}"/><circle cx="50" cy="50" r="29" fill="${W}"/>
+    <rect x="29" y="36" width="42" height="28" rx="14" fill="${D}"/><path d="M37 44q4-4 10-4" stroke="${W}" stroke-width="3" fill="none" stroke-linecap="round" opacity=".7"/>
+    <circle cx="50" cy="80" r="3" fill="rgba(0,0,0,.2)"/>`],
+  a11: ['Monstertje', `<path d="M32 34 28 18l14 10zM68 34l4-16-14 10z" fill="${W}"/><rect x="22" y="28" width="56" height="56" rx="26" fill="${W}"/>
+    <circle cx="50" cy="50" r="12" fill="rgba(0,0,0,.06)" stroke="${D}" stroke-width="3"/><circle cx="52" cy="50" r="5" fill="${D}"/>
+    <path d="M36 68q14 9 28 0" stroke="${D}" stroke-width="3" fill="none" stroke-linecap="round"/><path d="m42 70 3 4 3-3zM55 71l3 3 3-4z" fill="${D}"/>`],
+  a12: ['Panda', `<circle cx="30" cy="34" r="11" fill="${D}"/><circle cx="70" cy="34" r="11" fill="${D}"/><circle cx="50" cy="57" r="27" fill="${W}"/>
+    <ellipse cx="40" cy="54" rx="7" ry="9.5" transform="rotate(-25 40 54)" fill="${D}"/><ellipse cx="60" cy="54" rx="7" ry="9.5" transform="rotate(25 60 54)" fill="${D}"/>
+    <circle cx="41" cy="53" r="2.4" fill="${W}"/><circle cx="59" cy="53" r="2.4" fill="${W}"/><ellipse cx="50" cy="66" rx="4.5" ry="3.3" fill="${D}"/>`],
+};
+
+/**
+ * Profielfoto: een figuurtje of de eerste letter, op de kleur van het account.
+ * `self`: van het eigen account, dan volgt de achtergrond meteen een nieuw gekozen kleur.
+ */
+function avatar(profile, { self = false } = {}) {
+  const color = themeColor(profile.theme);
+  const el = h('div', { class: 'avatar', style: `--c:${self ? 'var(--accent)' : color};color:${self ? 'var(--accent-ink)' : inkFor(color)}` });
+  const art = AVATAR_ART[profile.avatar];
+  if (art) {
+    el.classList.add('art');
+    el.innerHTML = `<svg viewBox="0 0 100 100" aria-hidden="true">${art[1]}</svg>`;
+  } else {
+    el.textContent = (profile.username?.[0] ?? '?').toUpperCase();
+  }
+  return el;
+}
+
+/** De profielfoto's in het menu bijwerken na een andere keuze. */
+function updateNavAvatar() {
+  for (const slot of document.querySelectorAll('.nav-avatar')) slot.replaceChildren(avatar(state.user, { self: true }));
 }
 
 function profileScreen() {
@@ -396,6 +506,26 @@ function loginScreen() {
   });
 }
 
+/** Ingelogd met een tijdelijk wachtwoord: eerst een eigen wachtwoord kiezen. */
+function newPasswordScreen() {
+  return authScreen({
+    title: 'Kies je eigen wachtwoord',
+    intro: `Welkom ${state.user.username}! Je bent ingelogd met een tijdelijk wachtwoord. Kies nu een wachtwoord dat alleen jij weet.`,
+    fields: [
+      field('Nieuw wachtwoord (minimaal 8 tekens)', { name: 'next', type: 'password', autocomplete: 'new-password', minLength: 8, required: true, autofocus: true }),
+      field('Nog een keer', { name: 'repeat', type: 'password', autocomplete: 'new-password', minLength: 8, required: true }),
+    ],
+    submit: 'Wachtwoord opslaan',
+    action: async ({ next, repeat }) => {
+      if (next !== repeat) throw new Error('De twee wachtwoorden zijn niet hetzelfde.');
+      await api('POST', '/api/password', { next });
+      state.user.mustChangePassword = false;
+      renderApp();
+      toast('Je wachtwoord is opgeslagen.');
+    },
+  });
+}
+
 function setupScreen() {
   return authScreen({
     title: 'Welkom',
@@ -410,7 +540,7 @@ function setupScreen() {
       const { user } = await api('POST', '/api/setup', values);
       state.user = user;
       state.needsSetup = false;
-      location.hash = '#/instellingen';
+      location.hash = '#/instellingen/bronnen';
       renderApp();
     },
   });
@@ -1045,7 +1175,7 @@ function pagedList(container, load, render) {
 const emptySources = () => h('div', { class: 'empty' },
   h('p', {}, 'Er is nog geen bron toegevoegd.'),
   state.user.role === 'admin'
-    ? h('a', { class: 'btn primary', href: '#/instellingen' }, 'Bron toevoegen')
+    ? h('a', { class: 'btn primary', href: '#/instellingen/bronnen' }, 'Bron toevoegen')
     : h('p', { class: 'small' }, 'Vraag de beheerder om een IPTV-bron toe te voegen.'));
 
 function groupSelect(groups, selected, onGroup) {
@@ -1246,7 +1376,24 @@ function channelTile(item, badge) {
     item.now && h('div', { class: 'meter' }, h('i', { style: `width:${progress}%` })));
 }
 
-const shelf = (title, row) => h('section', { class: 'shelf' }, h('h2', {}, title), row);
+/** Rij die je zijwaarts doorloopt. Op een computer met pijltjes ernaast. */
+function shelf(title, row) {
+  if (TV || !row.classList.contains('shelf-row')) return h('section', { class: 'shelf' }, h('h2', {}, title), row);
+  const step = (direction) => row.scrollBy({ left: direction * Math.max(200, row.clientWidth * 0.8), behavior: 'smooth' });
+  const prev = h('button', { class: 'icon-btn shelf-arrow', 'aria-label': 'Naar links', onclick: () => step(-1) }, icon('back'));
+  const next = h('button', { class: 'icon-btn shelf-arrow', 'aria-label': 'Naar rechts', onclick: () => step(1) }, icon('right'));
+  const controls = h('div', { class: 'shelf-arrows' }, prev, next);
+  const update = () => {
+    const max = row.scrollWidth - row.clientWidth;
+    controls.hidden = max <= 4;
+    prev.disabled = row.scrollLeft <= 4;
+    next.disabled = row.scrollLeft >= max - 4;
+  };
+  row.addEventListener('scroll', update, { passive: true });
+  new ResizeObserver(update).observe(row);
+  requestAnimationFrame(update);
+  return h('section', { class: 'shelf' }, h('div', { class: 'shelf-head' }, h('h2', {}, title), controls), row);
+}
 
 async function removeFromContinue(item) {
   await api('DELETE', `/api/progress/${item.id}`);
@@ -1665,7 +1812,8 @@ function accountPanel() {
     field('Nieuw wachtwoord (minimaal 8 tekens)', { name: 'next', type: 'password', autocomplete: 'new-password', minLength: 8, required: true }),
     h('button', { class: 'btn', type: 'submit' }, 'Wachtwoord wijzigen'));
   return h('section', { class: 'panel' },
-    h('div', { class: 'list-item', style: 'border:0;padding-top:0' },
+    h('div', { class: 'list-item account-head', style: 'border:0;padding-top:0' },
+      h('span', { class: 'nav-avatar account-avatar' }, avatar(state.user, { self: true })),
       h('div', { class: 'grow' }, h('h2', {}, state.user.username), h('span', { class: 'muted small' }, state.user.role === 'admin' ? 'Beheerder' : 'Kijker')),
       h('button', {
         class: 'btn compact',
@@ -1676,8 +1824,48 @@ function accountPanel() {
           renderApp();
         },
       }, 'Uitloggen')),
+    TV && h('div', { class: 'theme-picker actions' }, h('button', { class: 'btn', onclick: () => showProfiles() }, 'Wissel van profiel'),
+      // Alleen in de tv-app vanaf versie 1.3: ander serveradres instellen.
+      window.KijkboxApp && h('button', { class: 'btn', onclick: () => window.KijkboxApp.changeServer() }, 'Serveradres van de app wijzigen')),
+    h('details', {}, h('summary', {}, 'Wachtwoord wijzigen'), form));
+}
+
+/** Hoe Kijkbox er voor jou uitziet: profielfoto, kleur, licht/donker en een eigen stijl. */
+function appearancePanel() {
+  const looks = h('div', {});
+  const save = async (look) => {
+    const previous = state.user.look ?? {};
+    state.user.look = look;
+    applyLook(look);
+    drawLooks();
+    try {
+      await api('POST', '/api/look', { look });
+    } catch (err) {
+      state.user.look = previous;
+      applyLook(previous);
+      drawLooks();
+      toast(err.message);
+    }
+  };
+  function drawLooks() {
+    const look = state.user.look ?? {};
+    const same = (preset) => LOOK_CHOICES.every(([key]) => (preset[key] ?? '') === (look[key] ?? ''));
+    looks.replaceChildren(
+      h('div', { class: 'theme-picker' }, h('div', { class: 'muted small' }, 'Kant-en-klare stijlen'),
+        h('div', { class: 'chips' }, LOOK_PRESETS.map(([label, preset]) => h('button', {
+          type: 'button', class: `chip${same(preset) ? ' active' : ''}`, 'aria-pressed': String(same(preset)),
+          onclick: () => save({ ...Object.fromEntries(LOOK_CHOICES.map(([key]) => [key, ''])), ...preset }),
+        }, label)))),
+      ...LOOK_CHOICES.map(([key, label, options]) => choiceRow(label, options, look[key] ?? '', (value) => save({ ...look, [key]: value }))));
+  }
+  drawLooks();
+
+  return h('section', { class: 'panel' },
+    h('h2', { style: 'margin-bottom:6px' }, 'Weergave'),
+    h('p', { class: 'muted small' }, 'Alleen voor jouw account. Op de tv zie je dezelfde keuzes.'),
+    avatarPicker(),
     themePicker(),
-    choiceRow('Weergave', APPEARANCES, state.user.appearance ?? '', async (value) => {
+    choiceRow('Licht of donker', APPEARANCES, state.user.appearance ?? '', async (value) => {
       const previous = state.user.appearance ?? '';
       state.user.appearance = value;
       applyAppearance(value);
@@ -1690,10 +1878,35 @@ function accountPanel() {
       }
     }),
     TV && choiceRow('Tekstgrootte op deze tv', TV_SIZES, localStorage.getItem(TV_SIZE_KEY) ?? '1', applyTvSize),
-    TV && h('div', { class: 'theme-picker actions' }, h('button', { class: 'btn', onclick: () => showProfiles() }, 'Wissel van profiel'),
-      // Alleen in de tv-app vanaf versie 1.3: ander serveradres instellen.
-      window.KijkboxApp && h('button', { class: 'btn', onclick: () => window.KijkboxApp.changeServer() }, 'Serveradres van de app wijzigen')),
-    h('details', {}, h('summary', {}, 'Wachtwoord wijzigen'), form));
+    h('h3', {}, 'Eigen stijl'),
+    looks);
+}
+
+function avatarPicker() {
+  const grid = h('div', { class: 'avatar-grid' });
+  const draw = () => grid.replaceChildren(...['', ...Object.keys(AVATAR_ART)].map((key) => h('button', {
+    type: 'button',
+    class: `avatar-choice${(state.user.avatar ?? '') === key ? ' active' : ''}`,
+    title: key ? AVATAR_ART[key][0] : 'Eerste letter',
+    'aria-label': key ? AVATAR_ART[key][0] : 'Eerste letter van je naam',
+    'aria-pressed': String((state.user.avatar ?? '') === key),
+    onclick: async () => {
+      const previous = state.user.avatar ?? '';
+      state.user.avatar = key;
+      draw();
+      updateNavAvatar();
+      try {
+        await api('POST', '/api/avatar', { avatar: key });
+      } catch (err) {
+        state.user.avatar = previous;
+        draw();
+        updateNavAvatar();
+        toast(err.message);
+      }
+    },
+  }, avatar({ ...state.user, avatar: key }, { self: true }))));
+  draw();
+  return h('div', { class: 'theme-picker' }, h('div', { class: 'muted small' }, 'Profielfoto (de achtergrond is je kleur)'), grid);
 }
 
 /** Landen en categorieën verbergen die je nooit kijkt (alleen voor jouw account). */
@@ -1752,32 +1965,43 @@ function hiddenPanel() {
 }
 
 function themePicker() {
+  const custom = h('input', {
+    type: 'color', class: 'color-input', 'aria-label': 'Eigen kleur kiezen', title: 'Eigen kleur',
+    value: isCustomColor(state.user.theme) ? state.user.theme : '#22c55e',
+  });
+  const customWrap = h('label', { class: 'swatch custom', title: 'Eigen kleur' }, custom);
+  async function pick(key) {
+    const previous = state.user.theme ?? '';
+    state.user.theme = key;
+    applyTheme(key);
+    mark();
+    try {
+      await api('POST', '/api/theme', { theme: key });
+    } catch (err) {
+      state.user.theme = previous;
+      applyTheme(previous);
+      mark();
+      toast(err.message);
+    }
+  }
   const buttons = THEMES.map(([key, label, color]) => h('button', {
-    type: 'button',
-    class: `swatch${(state.user.theme ?? '') === key ? ' active' : ''}`,
-    style: `--swatch:${color}`,
-    title: label,
-    'aria-label': `Thema ${label}`,
-    'aria-pressed': String((state.user.theme ?? '') === key),
-    onclick: async () => {
-      const previous = state.user.theme ?? '';
-      state.user.theme = key;
-      applyTheme(key);
-      for (const b of buttons) {
-        const on = b === buttons[THEMES.findIndex(([k]) => k === key)];
-        b.classList.toggle('active', on);
-        b.setAttribute('aria-pressed', String(on));
-      }
-      try {
-        await api('POST', '/api/theme', { theme: key });
-      } catch (err) {
-        state.user.theme = previous;
-        applyTheme(previous);
-        toast(err.message);
-      }
-    },
+    type: 'button', class: 'swatch', style: `--swatch:${color}`, title: label, 'aria-label': `Kleur ${label}`,
+    onclick: () => pick(key),
   }));
-  return h('div', { class: 'theme-picker' }, h('div', { class: 'muted small' }, 'Kleurthema'), h('div', { class: 'swatches' }, buttons));
+  function mark() {
+    const current = state.user.theme ?? '';
+    THEMES.forEach(([key], i) => {
+      buttons[i].classList.toggle('active', key === current);
+      buttons[i].setAttribute('aria-pressed', String(key === current));
+    });
+    customWrap.classList.toggle('active', isCustomColor(current));
+    customWrap.style.setProperty('--swatch', isCustomColor(current) ? current : '');
+  }
+  // Tijdens het slepen alleen laten zien, bij loslaten opslaan.
+  custom.addEventListener('input', () => applyTheme(custom.value));
+  custom.addEventListener('change', () => pick(custom.value.toLowerCase()));
+  mark();
+  return h('div', { class: 'theme-picker' }, h('div', { class: 'muted small' }, 'Kleur'), h('div', { class: 'swatches' }, buttons, customWrap));
 }
 
 function sourceForm(onAdded) {
@@ -1905,11 +2129,39 @@ function sourcesPanel() {
 
 function usersPanel() {
   const list = h('div', {});
+  const notice = h('div', {});
+
+  /** Het tijdelijke wachtwoord één keer laten zien, om door te geven. */
+  function showTemp(username, password) {
+    const code = h('code', {}, password);
+    const copy = h('button', {
+      class: 'btn compact', type: 'button',
+      onclick: () => {
+        // Werkt ook zonder https: de tekst selecteren en de browser laten kopiëren.
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        const selection = getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        toast(document.execCommand('copy') ? 'Gekopieerd.' : 'Geselecteerd: kopieer het met Ctrl+C.');
+      },
+    }, 'Kopiëren');
+    notice.replaceChildren(h('div', { class: 'temp-password' },
+      h('div', { class: 'grow' },
+        h('div', {}, `Tijdelijk wachtwoord voor ${username}:`),
+        code,
+        h('div', { class: 'muted small' }, 'Geef dit door. Bij de eerste keer inloggen kiest de gebruiker zelf een nieuw wachtwoord. Je ziet het hier maar één keer.')),
+      copy,
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Sluiten', onclick: () => notice.replaceChildren() }, icon('close'))));
+  }
 
   async function refresh() {
     const users = await api('GET', '/api/users');
     list.replaceChildren(...users.map((user) => h('div', { class: 'list-item' },
-      h('div', { class: 'grow' }, h('b', {}, user.username), user.id === state.user.id && h('span', { class: 'muted small' }, ' (jij)')),
+      avatar(user),
+      h('div', { class: 'grow' },
+        h('b', {}, user.username), user.id === state.user.id && h('span', { class: 'muted small' }, ' (jij)'),
+        user.temporary && h('div', { class: 'muted small' }, 'Heeft nog een tijdelijk wachtwoord')),
       h('select', {
         'aria-label': `Rol van ${user.username}`, style: 'width:auto;min-height:36px;padding:4px 8px',
         onchange: async (e) => {
@@ -1925,16 +2177,16 @@ function usersPanel() {
       user.id !== state.user.id && h('button', {
         class: 'btn compact',
         onclick: async () => {
-          const password = prompt(`Nieuw wachtwoord voor ${user.username} (minimaal 8 tekens):`);
-          if (!password) return;
+          if (!confirm(`Nieuw tijdelijk wachtwoord voor ${user.username}? Het oude werkt dan niet meer en ${user.username} wordt overal uitgelogd.`)) return;
           try {
-            await api('PATCH', `/api/users/${user.id}`, { password });
-            toast('Wachtwoord aangepast.');
+            const { tempPassword } = await api('PATCH', `/api/users/${user.id}`, { resetPassword: true });
+            showTemp(user.username, tempPassword);
+            refresh();
           } catch (err) {
             toast(err.message);
           }
         },
-      }, 'Wachtwoord'),
+      }, 'Wachtwoord vergeten'),
       user.id !== state.user.id && h('button', {
         class: 'icon-btn', 'aria-label': `${user.username} verwijderen`,
         onclick: async () => {
@@ -1950,10 +2202,11 @@ function usersPanel() {
     class: 'form',
     onsubmit: async (event) => {
       event.preventDefault();
+      const values = Object.fromEntries(new FormData(form));
       try {
-        await api('POST', '/api/users', Object.fromEntries(new FormData(form)));
+        const { tempPassword } = await api('POST', '/api/users', values);
         form.reset();
-        toast('Account aangemaakt.');
+        showTemp(values.username, tempPassword);
         refresh();
       } catch (err) {
         toast(err.message);
@@ -1961,19 +2214,40 @@ function usersPanel() {
     },
   },
     field('Gebruikersnaam', { name: 'username', autocapitalize: 'none', autocomplete: 'off', required: true }),
-    field('Wachtwoord (minimaal 8 tekens)', { name: 'password', type: 'password', autocomplete: 'new-password', minLength: 8, required: true }),
     h('label', {}, 'Rol', h('select', { name: 'role' }, h('option', { value: 'viewer' }, 'Kijker'), h('option', { value: 'admin' }, 'Beheerder'))),
+    h('p', { class: 'muted small' }, 'Kijkbox maakt een tijdelijk wachtwoord. Daarmee logt de nieuwe gebruiker de eerste keer in en kiest dan zelf een wachtwoord.'),
     h('button', { class: 'btn', type: 'submit' }, 'Account aanmaken'));
 
-  return h('section', { class: 'panel' }, h('h2', {}, 'Accounts'), list, h('details', { style: 'margin-top:12px' }, h('summary', {}, 'Nieuw account'), form));
+  return h('section', { class: 'panel' }, h('h2', {}, 'Accounts'), notice, list, h('details', { style: 'margin-top:12px' }, h('summary', {}, 'Nieuw account'), form));
 }
 
-function settingsView(container) {
-  const page = h('div', { class: 'page settings' }, h('div', { class: 'page-head' }, h('h1', {}, 'Instellingen')), accountPanel());
-  if (!TV) page.append(pairPanel());
-  page.append(hiddenPanel());
-  if (state.user.role === 'admin') page.append(sourcesPanel(), usersPanel());
-  if (state.user.role === 'admin' && !TV) page.append(statusPanel(), subtitlesPanel(), networkPanel(), updatesPanel(), backupsPanel());
+// Onderdelen van Instellingen. De laatste vier zijn alleen voor beheerders.
+const SETTINGS_TABS = [
+  ['', 'Account', false, () => [accountPanel(), !TV && pairPanel()]],
+  ['weergave', 'Weergave', false, () => [appearancePanel()]],
+  ['verbergen', 'Verbergen', false, () => [hiddenPanel()]],
+  ['status', 'Status', true, () => [statusPanel()], () => !TV],
+  ['bronnen', 'Bronnen', true, () => [sourcesPanel()]],
+  ['gebruikers', 'Gebruikers', true, () => [usersPanel()]],
+  ['server', 'Server', true, () => [updatesPanel(), backupsPanel(), networkPanel(), subtitlesPanel()], () => !TV],
+];
+
+function settingsView(container, tab = '') {
+  const admin = state.user.role === 'admin';
+  const tabs = SETTINGS_TABS.filter(([, , adminOnly, , show]) => (!adminOnly || admin) && (!show || show()));
+  const current = tabs.find(([key]) => key === tab) ?? tabs[0];
+  const link = ([key, label]) => h('a', {
+    class: `chip${key === current[0] ? ' active' : ''}`,
+    href: key ? `#/instellingen/${key}` : '#/instellingen',
+    'aria-current': key === current[0] ? 'page' : undefined,
+  }, label);
+  const mine = tabs.filter(([, , adminOnly]) => !adminOnly);
+  const manage = tabs.filter(([, , adminOnly]) => adminOnly);
+  const nav = h('nav', { class: 'settings-tabs', 'aria-label': 'Onderdelen' },
+    mine.map(link),
+    manage.length ? h('span', { class: 'settings-sep muted small' }, 'Beheer') : null,
+    manage.map(link));
+  const page = h('div', { class: 'page settings' }, h('div', { class: 'page-head' }, h('h1', {}, 'Instellingen')), nav, ...current[3]().filter(Boolean));
   container.replaceChildren(page);
 }
 
@@ -2274,7 +2548,8 @@ async function route() {
   cleanup?.();
   cleanup = null;
   for (const link of document.querySelectorAll('.nav a')) {
-    link.classList.toggle('active', link.getAttribute('href') === hash);
+    const href = link.getAttribute('href');
+    link.classList.toggle('active', !link.classList.contains('nav-profile') && (href === hash || hash.startsWith(`${href}/`)));
   }
   const holder = h('div', {}, skeleton(hash));
   viewEl.replaceChildren(holder);
@@ -2286,7 +2561,7 @@ async function route() {
     else if (hash === '#/gids') stop = await guideView(holder);
     else if (hash === '#/films') stop = await posterView(holder, 'movie', { returning });
     else if (hash === '#/series') stop = await posterView(holder, 'series', { returning });
-    else if (hash === '#/instellingen') stop = settingsView(holder);
+    else if (hash === '#/instellingen' || hash.startsWith('#/instellingen/')) stop = settingsView(holder, hash.slice(15));
     else if (hash.startsWith('#/item/')) stop = await detailView(holder, Number(hash.slice(7)));
     else location.hash = '#/home';
     if (mine === routeToken && typeof stop === 'function') cleanup = stop;
@@ -2655,6 +2930,7 @@ function renderApp() {
   const app = document.getElementById('app');
   applyTheme(state.user?.theme ?? '');
   applyAppearance(state.user?.appearance ?? '');
+  if (state.user) applyLook(state.user.look ?? {});
   // Ander account (of opnieuw opgebouwd): geen bewaarde lijsten van de vorige.
   for (const key of Object.keys(posterCache)) delete posterCache[key];
   lastRoute = '';
@@ -2665,13 +2941,16 @@ function renderApp() {
   }
   if (state.needsSetup) return app.replaceChildren(setupScreen());
   if (!state.user) return app.replaceChildren(TV ? (state.profiles ? profileScreen() : pairScreen()) : loginScreen());
+  if (state.user.mustChangePassword) return app.replaceChildren(newPasswordScreen());
   // Op de tv bij het opstarten eerst kiezen wie er kijkt (zoals bij Netflix).
   if (TV && state.profiles && !profileChosen()) return app.replaceChildren(profileScreen());
   viewEl = h('main', { class: 'view' });
   const nav = h('nav', { class: 'nav', 'aria-label': 'Hoofdmenu' },
-    h('img', { class: 'logo', src: '/icon.svg', alt: 'Kijkbox' }),
+    // Op de plek van het logo: je eigen profielfoto (naar Account).
+    h('a', { class: 'nav-profile', href: '#/instellingen', title: `${state.user.username} – Account`, 'aria-label': 'Account' },
+      h('span', { class: 'nav-avatar' }, avatar(state.user, { self: true }))),
     NAV.map(([href, iconName, label]) => h('a', { href }, icon(iconName), label)),
-    h('a', { class: 'bottom', href: '#/instellingen' }, icon('user'), 'Account'));
+    h('a', { class: 'bottom', href: '#/instellingen' }, icon('user'), h('span', { class: 'nav-avatar mini' }, avatar(state.user, { self: true })), 'Account'));
   app.replaceChildren(h('div', { class: `shell${player.item ? '' : ' idle'}` }, nav, stage, viewEl));
   route();
 }
@@ -2684,3 +2963,36 @@ state.user = initial.user;
 state.subtitles = initial.user ? Boolean(initial.subtitles) : undefined;
 state.needsSetup = initial.needsSetup;
 renderApp();
+
+// ---- Nieuwe versie op de server
+// Na een update draait de server meteen de nieuwe versie, maar een pagina die al open stond (of de
+// tv-app, die dagen open blijft) heeft nog de oude code. Dan de pagina vernieuwen.
+const loadedVersion = initial.version;
+let updateNotice = null;
+
+function reloadForUpdate() {
+  saveProgress(true);
+  location.reload();
+}
+
+async function checkVersion() {
+  if (!loadedVersion || updateNotice) return;
+  let version;
+  try {
+    ({ version } = await fetch('/api/state').then((r) => r.json()));
+  } catch {
+    return;
+  }
+  if (!version || version === loadedVersion) return;
+  // Speelt er niets en kijkt niemand naar de pagina, dan kan het meteen.
+  if (!player.item && document.visibilityState === 'hidden') return reloadForUpdate();
+  updateNotice = h('div', { class: 'update-notice', role: 'status' },
+    h('span', {}, `Kijkbox is bijgewerkt naar versie ${version}.`),
+    h('button', { class: 'btn compact primary', onclick: reloadForUpdate }, 'Nu vernieuwen'));
+  document.body.append(updateNotice);
+}
+
+setInterval(checkVersion, 5 * 60 * 1000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkVersion();
+});

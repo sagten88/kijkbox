@@ -87,18 +87,49 @@ const hasUsers = () => db.prepare('SELECT 1 FROM users LIMIT 1').get() !== undef
 const setupCode = crypto.randomBytes(4).toString('hex').toUpperCase();
 
 const loginKey = (req, name) => `${req.ip}|${String(name).toLowerCase()}`;
-const publicUser = (u) => ({ id: u.id, username: u.username, role: u.role, theme: u.theme ?? '', appearance: u.appearance ?? '' });
+const publicUser = (u) => ({
+  id: u.id, username: u.username, role: u.role, theme: u.theme ?? '', appearance: u.appearance ?? '',
+  avatar: u.avatar ?? '', look: parseLook(u.look), mustChangePassword: Boolean(u.must_change_password),
+});
+
+// Eigen thema: hoe knoppen, hoeken, letters, kaarten en achtergrond eruitzien. Leeg = standaard.
+const LOOK_OPTIONS = {
+  corners: ['', 'round', 'square'],
+  buttons: ['', 'pill', 'outline'],
+  font: ['', 'rounded', 'serif', 'mono'],
+  cards: ['', 'small', 'large'],
+  background: ['', 'gradient', 'glass'],
+};
+function parseLook(value) {
+  let raw = {};
+  try { raw = typeof value === 'string' ? JSON.parse(value || '{}') : (value ?? {}); } catch { /* leeg */ }
+  const look = {};
+  for (const [key, allowed] of Object.entries(LOOK_OPTIONS)) look[key] = allowed.includes(raw?.[key]) ? raw[key] : '';
+  return look;
+}
+
+// Profielfoto's: a1 t/m a12 (getekend in de browser), of leeg voor de eerste letter.
+const AVATARS = new Set(['', ...Array.from({ length: 12 }, (_, i) => `a${i + 1}`)]);
+
+/** Tijdelijk wachtwoord dat makkelijk over te nemen is: geen 0/o, 1/l/i. */
+function tempPassword() {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const pick = (n) => Array.from({ length: n }, () => chars[crypto.randomInt(chars.length)]).join('');
+  return `${pick(4)}-${pick(4)}-${pick(4)}`;
+}
 const APPEARANCES = new Set(['', 'light', 'oled']);
 
 // Kleurthema's die een account kan kiezen. Leeg is het standaardgeel.
 const THEMES = new Set(['', 'blauw', 'groen', 'rood', 'paars', 'roze', 'oranje', 'turquoise']);
+// Of een eigen kleur (#rrggbb).
+const validTheme = (theme) => typeof theme === 'string' && (THEMES.has(theme) || /^#[0-9a-f]{6}$/i.test(theme));
 
 app.get('/api/state', (req, res) => {
   const user = currentUser(req);
   // Een tv die al was aangemeld voor deze versie, wordt zo meteen het eerste profiel.
   if (user && req.query.tv === '1') linkDevice(req, res, user.id);
   const profiles = req.query.tv === '1' ? deviceProfiles(deviceHash(req)).length : 0;
-  res.json({ needsSetup: !hasUsers(), user: user && publicUser(user), subtitles: Boolean(user) && subtitleSettings().configured, profiles });
+  res.set('Cache-Control', 'no-store').json({ needsSetup: !hasUsers(), user: user && publicUser(user), subtitles: Boolean(user) && subtitleSettings().configured, profiles, version: config.version });
 });
 
 // ---- Netwerk: thuisnetwerk of via een reverse proxy (beheerder)
@@ -263,7 +294,7 @@ app.post('/api/appearance', requireUser, (req, res) => {
 });
 
 // ---- Profielen op een tv: accounts die hier zijn aangemeld, om tussen te wisselen
-const deviceProfiles = (hash) => (hash ? db.prepare(`SELECT u.id, u.username, u.theme FROM device_accounts d
+const deviceProfiles = (hash) => (hash ? db.prepare(`SELECT u.id, u.username, u.theme, u.avatar FROM device_accounts d
   JOIN users u ON u.id = d.user_id WHERE d.device_hash = ? ORDER BY d.added_at`).all(hash) : []);
 
 app.get('/api/profiles', (req, res) => {
@@ -292,50 +323,72 @@ app.post('/api/profiles/:id/remove', (req, res) => {
 
 app.post('/api/theme', requireUser, (req, res) => {
   const theme = req.body?.theme;
-  if (typeof theme !== 'string' || !THEMES.has(theme)) return res.status(400).json({ error: 'Onbekend thema.' });
-  db.prepare('UPDATE users SET theme = ? WHERE id = ?').run(theme, req.user.id);
-  res.json({ theme });
+  if (!validTheme(theme)) return res.status(400).json({ error: 'Onbekend thema.' });
+  db.prepare('UPDATE users SET theme = ? WHERE id = ?').run(theme.toLowerCase(), req.user.id);
+  res.json({ theme: theme.toLowerCase() });
+});
+
+app.post('/api/look', requireUser, (req, res) => {
+  const look = parseLook(req.body?.look);
+  db.prepare('UPDATE users SET look = ? WHERE id = ?').run(JSON.stringify(look), req.user.id);
+  res.json({ look });
+});
+
+app.post('/api/avatar', requireUser, (req, res) => {
+  const avatar = req.body?.avatar;
+  if (typeof avatar !== 'string' || !AVATARS.has(avatar)) return res.status(400).json({ error: 'Onbekende profielfoto.' });
+  db.prepare('UPDATE users SET avatar = ? WHERE id = ?').run(avatar, req.user.id);
+  res.json({ avatar });
 });
 
 app.post('/api/password', requireUser, async (req, res) => {
   const { current, next } = req.body ?? {};
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (typeof current !== 'string' || !(await verifyPassword(current, user.password_hash))) {
+  // Net ingelogd met een tijdelijk wachtwoord: dat hoeft niet nog eens.
+  const temporary = Boolean(user.must_change_password);
+  if (!temporary && (typeof current !== 'string' || !(await verifyPassword(current, user.password_hash)))) {
     return res.status(403).json({ error: 'Je huidige wachtwoord klopt niet.' });
   }
   if (!validPassword(next)) return res.status(400).json({ error: 'Kies een wachtwoord van minimaal 8 tekens.' });
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(next), user.id);
+  if (temporary && (await verifyPassword(next, user.password_hash))) {
+    return res.status(400).json({ error: 'Kies een ander wachtwoord dan het tijdelijke.' });
+  }
+  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(await hashPassword(next), user.id);
   endOtherSessions(req, user.id);
   res.json({ ok: true });
 });
 
 // ---- Gebruikersbeheer
 app.get('/api/users', requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, created_at FROM users ORDER BY username').all());
+  res.json(db.prepare('SELECT id, username, role, created_at, theme, avatar, must_change_password FROM users ORDER BY username').all()
+    .map(({ must_change_password: temp, ...u }) => ({ ...u, temporary: Boolean(temp) })));
 });
 
 app.post('/api/users', requireAdmin, async (req, res) => {
-  const { username, password, role } = req.body ?? {};
+  const { username, role } = req.body ?? {};
   if (!validUsername(username)) return res.status(400).json({ error: 'Kies een gebruikersnaam van 2 tot 32 tekens (letters, cijfers, punt, streepje).' });
-  if (!validPassword(password)) return res.status(400).json({ error: 'Kies een wachtwoord van minimaal 8 tekens.' });
   if (role !== 'admin' && role !== 'viewer') return res.status(400).json({ error: 'Ongeldige rol.' });
   if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) {
     return res.status(409).json({ error: 'Deze gebruikersnaam bestaat al.' });
   }
-  const hash = await hashPassword(password);
-  db.prepare('INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)')
-    .run(username, hash, role, Date.now());
-  res.json({ ok: true });
+  // De nieuwe gebruiker krijgt een tijdelijk wachtwoord en kiest bij de eerste keer inloggen een eigen.
+  const password = tempPassword();
+  db.prepare('INSERT INTO users (username, password_hash, role, created_at, must_change_password) VALUES (?, ?, ?, ?, 1)')
+    .run(username, await hashPassword(password), role, Date.now());
+  res.json({ ok: true, tempPassword: password });
 });
 
 app.patch('/api/users/:id', requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  const { password, role } = req.body ?? {};
+  const { resetPassword, role } = req.body ?? {};
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!target) return res.status(404).json({ error: 'Gebruiker niet gevonden.' });
-  if (password !== undefined) {
-    if (!validPassword(password)) return res.status(400).json({ error: 'Kies een wachtwoord van minimaal 8 tekens.' });
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(password), id);
+  let password;
+  if (resetPassword === true) {
+    if (id === req.user.id) return res.status(400).json({ error: 'Wijzig je eigen wachtwoord bij Account.' });
+    // Wachtwoord vergeten: nieuw tijdelijk wachtwoord, dat de gebruiker bij inloggen zelf vervangt.
+    password = tempPassword();
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(await hashPassword(password), id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
   }
   if (role !== undefined) {
@@ -345,7 +398,7 @@ app.patch('/api/users/:id', requireAdmin, async (req, res) => {
     }
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
   }
-  res.json({ ok: true });
+  res.json({ ok: true, tempPassword: password });
 });
 
 const adminCount = () => db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin'`).get().n;

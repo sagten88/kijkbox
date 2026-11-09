@@ -126,7 +126,7 @@ export function linkDevice(req, res, userId) {
 }
 
 const findSession = db.prepare(`
-  SELECT u.id, u.username, u.role, u.theme, u.appearance, s.expires_at, s.token_hash
+  SELECT u.id, u.username, u.role, u.theme, u.appearance, u.avatar, u.look, u.must_change_password, s.expires_at, s.token_hash
   FROM sessions s JOIN users u ON u.id = s.user_id
   WHERE s.token_hash = ? AND s.expires_at > ?`);
 const extendSession = db.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?');
@@ -139,18 +139,30 @@ export function currentUser(req) {
   if (!row) return null;
   // Wie de site blijft gebruiken, blijft ingelogd. Eén keer per dag bijwerken is genoeg.
   if (row.expires_at - now < sessionMs - 86400 * 1000) extendSession.run(now + sessionMs, row.token_hash);
-  return { id: row.id, username: row.username, role: row.role, theme: row.theme, appearance: row.appearance };
+  return {
+    id: row.id, username: row.username, role: row.role, theme: row.theme, appearance: row.appearance,
+    avatar: row.avatar, look: row.look, must_change_password: row.must_change_password,
+  };
 }
+
+// Met een tijdelijk wachtwoord mag je alleen eerst een nieuw wachtwoord kiezen.
+const mustChange = (req, res) => {
+  if (!req.user.must_change_password || req.path === '/api/password') return false;
+  res.status(403).json({ error: 'Kies eerst een nieuw wachtwoord.', mustChangePassword: true });
+  return true;
+};
 
 export function requireUser(req, res, next) {
   req.user = currentUser(req);
   if (!req.user) return res.status(401).json({ error: 'Log eerst in.' });
+  if (mustChange(req, res)) return;
   next();
 }
 
 export function requireAdmin(req, res, next) {
   req.user = currentUser(req);
   if (!req.user) return res.status(401).json({ error: 'Log eerst in.' });
+  if (mustChange(req, res)) return;
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Alleen voor beheerders.' });
   next();
 }
