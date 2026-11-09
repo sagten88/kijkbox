@@ -2614,6 +2614,15 @@ function tvListLoaded() {
 function tvMove(direction) {
   const current = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
   if (!current || !isShown(current)) return tvFocusDefault();
+  // In het menu gaan omhoog/omlaag gewoon naar het vorige/volgende menu-item. Anders wint vanaf
+  // Series een poster rechtsonder het van Account, dat helemaal onderaan staat.
+  const nav = current.closest('.nav');
+  if (nav && (direction === 'up' || direction === 'down')) {
+    const items = [...nav.querySelectorAll(FOCUSABLE)].filter(isShown);
+    const next = items[items.indexOf(current) + (direction === 'down' ? 1 : -1)];
+    if (next) tvFocus(next);
+    return;
+  }
   const from = current.getBoundingClientRect();
   const cx = from.left + from.width / 2;
   const cy = from.top + from.height / 2;
