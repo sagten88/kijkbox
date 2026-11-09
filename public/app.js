@@ -231,12 +231,26 @@ function applyTvSize(value) {
 }
 try { applyTvSize(localStorage.getItem(TV_SIZE_KEY) ?? '1'); } catch {}
 
+/**
+ * Tekent een stuk opnieuw zonder dat de selectie van de afstandsbediening kwijtraakt: stond de focus
+ * op een knop met data-focus-key, dan komt hij daarna weer op de knop met dezelfde sleutel.
+ * Anders verdween de focus en sprong de cursor naar boven.
+ */
+function keepFocus(redraw) {
+  const key = document.activeElement?.dataset?.focusKey;
+  redraw();
+  if (!key) return;
+  const again = [...document.querySelectorAll('[data-focus-key]')].find((el) => el.dataset.focusKey === key);
+  again?.focus({ preventScroll: true });
+}
+
 /** Rij met keuzeknoppen (werkt ook met de afstandsbediening). */
 function choiceRow(label, options, current, onPick) {
   const buttons = options.map(([value, text]) => h('button', {
     type: 'button',
     class: `chip${value === current ? ' active' : ''}`,
     'aria-pressed': String(value === current),
+    'data-focus-key': `keuze:${label}:${value}`,
     onclick: () => {
       for (const b of buttons) {
         const on = b === buttons[options.findIndex(([v]) => v === value)];
@@ -1915,8 +1929,8 @@ function accountPanel() {
         },
       }, 'Uitloggen')),
     TV && h('div', { class: 'theme-picker actions' }, h('button', { class: 'btn', onclick: () => showProfiles() }, 'Wissel van profiel'),
-      // Alleen in de tv-app vanaf versie 1.3: ander serveradres instellen.
-      window.KijkboxApp && h('button', { class: 'btn', onclick: () => window.KijkboxApp.changeServer() }, 'Serveradres van de app wijzigen')),
+      // Alleen in de tv-app vanaf versie 1.3, en alleen voor de beheerder: ander serveradres instellen.
+      window.KijkboxApp && state.user.role === 'admin' && h('button', { class: 'btn', onclick: () => window.KijkboxApp.changeServer() }, 'Serveradres van de app wijzigen')),
     h('details', {}, h('summary', {}, 'Wachtwoord wijzigen'), form));
 }
 
@@ -1927,13 +1941,13 @@ function appearancePanel() {
     const previous = state.user.look ?? {};
     state.user.look = look;
     applyLook(look);
-    drawLooks();
+    keepFocus(drawLooks);
     try {
       await api('POST', '/api/look', { look });
     } catch (err) {
       state.user.look = previous;
       applyLook(previous);
-      drawLooks();
+      keepFocus(drawLooks);
       toast(err.message);
     }
   };
@@ -1943,7 +1957,7 @@ function appearancePanel() {
     looks.replaceChildren(
       h('div', { class: 'theme-picker' }, h('div', { class: 'muted small' }, 'Kant-en-klare stijlen'),
         h('div', { class: 'chips' }, LOOK_PRESETS.map(([label, preset]) => h('button', {
-          type: 'button', class: `chip${same(preset) ? ' active' : ''}`, 'aria-pressed': String(same(preset)),
+          type: 'button', class: `chip${same(preset) ? ' active' : ''}`, 'aria-pressed': String(same(preset)), 'data-focus-key': `stijl:${label}`,
           onclick: () => save({ ...Object.fromEntries(LOOK_CHOICES.map(([key]) => [key, ''])), ...preset }),
         }, label)))),
       ...LOOK_CHOICES.filter(([key]) => key !== 'pattern')
@@ -1979,7 +1993,7 @@ function patternPicker(current, onPick) {
   const options = LOOK_CHOICES.find(([key]) => key === 'pattern')[2];
   return h('div', { class: 'theme-picker' }, h('div', { class: 'muted small' }, 'Achtergrondpatroon (volgt je kleur)'),
     h('div', { class: 'pattern-grid' }, options.map(([value, label]) => h('button', {
-      type: 'button', class: `pattern-choice${value === current ? ' active' : ''}`, 'aria-pressed': String(value === current),
+      type: 'button', class: `pattern-choice${value === current ? ' active' : ''}`, 'aria-pressed': String(value === current), 'data-focus-key': `patroon:${value}`,
       onclick: () => onPick(value),
     }, h('span', { class: `swatch-box pat-${value || 'none'}` }), label))));
 }
@@ -1990,18 +2004,19 @@ function avatarPicker() {
     type: 'button',
     class: `avatar-choice${(state.user.avatar ?? '') === key ? ' active' : ''}`,
     title: key ? AVATAR_ART[key][0] : 'Eerste letter',
+    'data-focus-key': `profielfoto:${key}`,
     'aria-label': key ? AVATAR_ART[key][0] : 'Eerste letter van je naam',
     'aria-pressed': String((state.user.avatar ?? '') === key),
     onclick: async () => {
       const previous = state.user.avatar ?? '';
       state.user.avatar = key;
-      draw();
+      keepFocus(draw);
       updateNavAvatar();
       try {
         await api('POST', '/api/avatar', { avatar: key });
       } catch (err) {
         state.user.avatar = previous;
-        draw();
+        keepFocus(draw);
         updateNavAvatar();
         toast(err.message);
       }
