@@ -1909,8 +1909,7 @@ function networkPanel() {
         toast(err.message);
       }
     },
-  }, field('IP-adres van je reverse proxy (leeg = alleen thuisnetwerk)', {}), save);
-  form.querySelector('label').append(input);
+  }, h('label', {}, 'IP-adres van je reverse proxy (leeg = alleen thuisnetwerk)', input), save);
 
   function show(s) {
     input.value = s.proxy ?? '';
@@ -1948,7 +1947,9 @@ function updatesPanel() {
     if (!body.isConnected && timer) return;
     const newer = s.latest && s.latest !== s.version;
     const states = { waiting: 'Wacht tot niemand kijkt, dan wordt de update geïnstalleerd…', installing: 'Bezig met installeren…', checking: 'Bezig met controleren…', error: `Fout: ${s.message}` };
-    body.replaceChildren(
+    // replaceChildren zou false/null als tekst tonen; die eruit filteren.
+    const parts = (...items) => items.filter((item) => item !== false && item !== null && item !== undefined && item !== '');
+    body.replaceChildren(...parts(
       h('p', {}, h('b', {}, `Versie ${s.version}`), s.latest && !newer ? h('span', { class: 'muted small' }, ' · dit is de nieuwste') : null),
       !s.managed && h('p', { class: 'muted small' }, 'Deze installatie is niet met het installatiescript gemaakt; updates gaan hier met de hand.'),
       s.managed && newer && h('div', { class: 'update-new' },
@@ -1961,7 +1962,7 @@ function updatesPanel() {
       s.managed && h('label', { class: 'check' },
         h('input', { type: 'checkbox', checked: s.auto, onchange: (e) => act({ auto: e.target.checked }) }),
         h('span', { class: 'grow' }, "Automatisch installeren ('s nachts, als niemand kijkt)")),
-      s.checkedAt && h('p', { class: 'muted small' }, `Laatst gecontroleerd: ${dateTime(s.checkedAt)}`));
+      s.checkedAt && h('p', { class: 'muted small' }, `Laatst gecontroleerd: ${dateTime(s.checkedAt)}`)));
     // Zolang er iets loopt, de status bijwerken.
     if (s.pending || ['waiting', 'installing', 'checking'].includes(s.state)) timer = setTimeout(load, 3000);
   }
