@@ -172,7 +172,7 @@ const LOOK_CHOICES = [
   ['buttons', 'Knoppen', [['', 'Gevuld'], ['pill', 'Pil'], ['outline', 'Omlijnd']]],
   ['font', 'Letters', [['', 'Standaard'], ['rounded', 'Zacht'], ['serif', 'Klassiek'], ['mono', 'Typemachine']]],
   ['cards', 'Posters', [['', 'Normaal'], ['small', 'Klein'], ['large', 'Groot']]],
-  ['background', 'Achtergrond', [['', 'Effen'], ['gradient', 'Kleurverloop'], ['glass', 'Glas']]],
+  ['background', 'Achtergrond', [['', 'Glas'], ['gradient', 'Kleurverloop'], ['plain', 'Effen']]],
   // Patronen worden met voorbeeldtegels gekozen (zie patternPicker), niet met knoppen.
   ['pattern', 'Patroon', [['', 'Geen'], ['dots', 'Stippen'], ['grid', 'Raster'], ['lines', 'Strepen'], ['waves', 'Golven'],
     ['stars', 'Sterren'], ['bubbles', 'Bubbels'], ['topo', 'Hoogtelijnen'], ['aurora', 'Noorderlicht']]],
@@ -181,8 +181,8 @@ const LOOK_PRESETS = [
   ['Standaard', {}],
   ['Bioscoop', { corners: 'square', font: 'serif', cards: 'large', background: 'gradient', pattern: 'stars' }],
   ['Speels', { corners: 'round', buttons: 'pill', font: 'rounded', background: 'gradient', pattern: 'bubbles' }],
-  ['Retro', { corners: 'square', buttons: 'outline', font: 'mono', pattern: 'grid' }],
-  ['Glas', { corners: 'round', buttons: 'pill', background: 'glass', pattern: 'aurora' }],
+  ['Retro', { corners: 'square', buttons: 'outline', font: 'mono', background: 'plain', pattern: 'grid' }],
+  ['Glas', { corners: 'round', buttons: 'pill', pattern: 'aurora' }],
 ];
 const LOOK_KEY = 'kijkbox-stijl';
 
@@ -192,6 +192,10 @@ function applyLook(look) {
     if (look?.[key]) root.dataset[key] = look[key];
     else delete root.dataset[key];
   }
+  // Glas is de standaard; alleen "Effen" zet het uit.
+  const background = look?.background === 'glass' ? '' : look?.background ?? '';
+  if (background === 'plain') delete root.dataset.background;
+  else root.dataset.background = background || 'glass';
   try { localStorage.setItem(LOOK_KEY, JSON.stringify(look ?? {})); } catch {}
 }
 try { applyLook(JSON.parse(localStorage.getItem(LOOK_KEY) || '{}')); } catch {}

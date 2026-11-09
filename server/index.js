@@ -98,7 +98,8 @@ const LOOK_OPTIONS = {
   buttons: ['', 'pill', 'outline'],
   font: ['', 'rounded', 'serif', 'mono'],
   cards: ['', 'small', 'large'],
-  background: ['', 'gradient', 'glass'],
+  // Leeg = glas (de standaard sinds 1.4.1); 'plain' = effen. 'glass' is de oude naam voor glas.
+  background: ['', 'plain', 'gradient', 'glass'],
   pattern: ['', 'dots', 'grid', 'lines', 'waves', 'stars', 'bubbles', 'topo', 'aurora'],
 };
 function parseLook(value) {
@@ -106,6 +107,7 @@ function parseLook(value) {
   try { raw = typeof value === 'string' ? JSON.parse(value || '{}') : (value ?? {}); } catch { /* leeg */ }
   const look = {};
   for (const [key, allowed] of Object.entries(LOOK_OPTIONS)) look[key] = allowed.includes(raw?.[key]) ? raw[key] : '';
+  if (look.background === 'glass') look.background = '';
   return look;
 }
 
