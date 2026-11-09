@@ -1351,7 +1351,22 @@ async function liveView(container) {
   return () => paged?.stop();
 }
 
-function posterCard(item) {
+/** Meteen verder kijken vanaf een poster, zonder eerst de detailpagina te openen. */
+async function resumeFromPoster(item) {
+  try {
+    const full = await api('GET', `/api/items/${item.id}`);
+    start(full, { resume: full.position || 0 });
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/**
+ * Poster van een film, serie of aflevering. Ben je ermee begonnen (`resume`, of er is voortgang),
+ * dan staat er een play-knop in het midden: die hervat meteen. Ernaast klikken opent de detailpagina.
+ */
+function posterCard(item, { resume = false } = {}) {
+  const playable = (item.type === 'movie' || item.type === 'episode') && (resume || item.position > 0);
   const percent = item.position && item.duration ? (item.position / item.duration) * 100 : 0;
   // Bij een aflevering in "Verder kijken": de serie als titel, de aflevering eronder.
   const title = item.seriesName ? clean(item.seriesName) : clean(item.name);
@@ -1359,13 +1374,26 @@ function posterCard(item) {
   const sub = item.seriesName && item.season
     ? `S${item.season} E${item.episode}`
     : [item.year, rating].filter(Boolean).join(' · ') || null;
-  return h('a', { class: 'poster', href: `#/item/${item.id}` },
+  const card = h('a', { class: 'poster', href: `#/item/${item.id}`, 'data-resume': playable ? '1' : undefined },
     h('div', { class: 'art' }, title,
+      playable && h('span', {
+        class: 'poster-play', role: 'button', tabindex: '-1',
+        title: item.position ? `Verder kijken vanaf ${clock(item.position)}` : 'Afspelen',
+        'aria-label': item.position ? `${title} verder kijken` : `${title} afspelen`,
+        onclick: (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          resumeFromPoster(item);
+        },
+      }, icon('play', true)),
       item.logo && h('img', { src: item.logo, alt: '', loading: 'lazy', onerror: (e) => e.target.remove() }),
       item.versions > 1 && h('span', { class: 'versions', title: `${item.versions} versies in verschillende talen` }, `${item.versions} talen`),
       percent > 0 && h('div', { class: 'meter' }, h('i', { style: `width:${percent}%` }))),
     h('div', { class: 'label' }, title),
     sub && h('div', { class: 'poster-sub' }, sub));
+  // Op de tv: met de play-toets van de afstandsbediening meteen verder kijken.
+  if (playable) card.resumeItem = item;
+  return card;
 }
 
 // ---- Home: verder kijken, laatste zender en favorieten
@@ -1490,7 +1518,7 @@ async function homeView(container) {
   page.append(news, featured);
   loadWhatsNew(news);
   loadFeatured(featured);
-  if (continuing.length) page.append(shelf('Verder kijken', h('div', { class: 'shelf-row' }, continuing.map(posterCard))));
+  if (continuing.length) page.append(shelf('Verder kijken', h('div', { class: 'shelf-row' }, continuing.map((item) => posterCard(item, { resume: true })))));
   if (channels.length) {
     page.append(shelf('Zenders', h('div', { class: 'shelf-row channels' },
       channels.map((item) => channelTile(item, item.id === last?.id ? 'Laatst gekeken' : null)))));
@@ -2968,6 +2996,9 @@ if (TV) {
       if (typing && (direction === 'left' || direction === 'right')) return;
       event.preventDefault();
       tvMove(direction);
+    } else if ((event.key === 'MediaPlayPause' || event.key === 'MediaPlay') && document.activeElement?.resumeItem) {
+      event.preventDefault();
+      resumeFromPoster(document.activeElement.resumeItem);
     } else if (BACK_KEYS.has(event.key) && !typing) {
       event.preventDefault();
       tvBack();

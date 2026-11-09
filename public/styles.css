@@ -554,3 +554,19 @@ body.tv .panel, body.tv .tile, body.tv .live-tile, body.tv .nav, body.tv .btn, b
 .guide-show .replay-start:hover .icon { color: inherit; }
 .archive-mark { margin-left: auto; color: var(--accent); display: inline-flex; flex: none; }
 .archive-mark .icon { width: 13px; height: 13px; }
+
+/* ---- Play-knop op posters waar je mee bezig bent */
+.poster-play {
+  position: absolute; left: 50%; top: 50%; z-index: 2; width: 58px; height: 58px; margin: -29px 0 0 -29px;
+  display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+  background: rgba(10, 12, 16, .62); color: #fff; border: 2px solid rgba(255, 255, 255, .85);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45); transition: transform .15s, background .15s, border-color .15s;
+}
+.poster-play .icon { width: 24px; height: 24px; margin-left: 3px; }
+.poster-play:hover { transform: scale(1.12); background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+@media (hover: hover) {
+  .poster[data-resume] .poster-play { opacity: .9; }
+  .poster[data-resume]:hover .poster-play { opacity: 1; }
+}
+body.tv .poster-play { pointer-events: none; width: 50px; height: 50px; margin: -25px 0 0 -25px; }
