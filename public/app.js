@@ -1520,11 +1520,15 @@ async function homeView(container) {
   if (channels.length) liveList = channels;
 
   const page = h('div', { class: 'page home' });
-  const news = h('div', { class: 'whats-new-slot' });
-  const featured = h('div', { class: 'featured-slot' });
-  page.append(news, featured);
-  loadWhatsNew(news);
-  loadFeatured(featured);
+  // Op de tv geen melding "wat is er nieuw" (die is met de afstandsbediening niet weg te klikken)
+  // en geen grote uitgelichte film bovenaan: Home begint daar meteen bij Verder kijken.
+  if (!TV) {
+    const news = h('div', { class: 'whats-new-slot' });
+    const featured = h('div', { class: 'featured-slot' });
+    page.append(news, featured);
+    loadWhatsNew(news);
+    loadFeatured(featured);
+  }
   if (continuing.length) page.append(shelf('Verder kijken', h('div', { class: 'shelf-row' }, continuing.map((item) => posterCard(item, { resume: true })))));
   if (channels.length) {
     page.append(shelf('Zenders', h('div', { class: 'shelf-row channels' },
@@ -3130,6 +3134,11 @@ async function checkVersion() {
     return;
   }
   if (!version || version === loadedVersion) return;
+  // Op de tv geen melding: stilletjes vernieuwen zodra er niets speelt (anders bij de volgende controle).
+  if (TV) {
+    if (!player.item) reloadForUpdate();
+    return;
+  }
   // Speelt er niets en kijkt niemand naar de pagina, dan kan het meteen.
   if (!player.item && document.visibilityState === 'hidden') return reloadForUpdate();
   updateNotice = h('div', { class: 'update-notice', role: 'status' },
