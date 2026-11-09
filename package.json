@@ -1,6 +1,6 @@
 {
   "name": "kijkbox",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Eigen IPTV-website met accounts, voor telefoon, tablet en laptop.",
   "private": true,
   "type": "module",

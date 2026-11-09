@@ -114,7 +114,14 @@ function debounce(fn, ms) {
 
 const state = { user: null, needsSetup: false, view: null };
 const COUNTRY_KEY = 'kijkbox-land';
-const liveFilter = { country: localStorage.getItem(COUNTRY_KEY) ?? 'NL', group: '', q: '', fav: false };
+// Ook de gekozen categorie bij Live en de Gids blijft bewaard, als je de app afsluit en weer opent.
+const GROUP_KEY = 'kijkbox-categorie';
+const savedGroup = () => { try { return localStorage.getItem(GROUP_KEY) ?? ''; } catch { return ''; } };
+function setLiveGroup(value) {
+  liveFilter.group = value;
+  try { localStorage.setItem(GROUP_KEY, value); } catch {}
+}
+const liveFilter = { country: localStorage.getItem(COUNTRY_KEY) ?? 'NL', group: savedGroup(), q: '', fav: false };
 const browseState = { movie: { group: '', q: '' }, series: { group: '', q: '' } };
 // Geen crypto.randomUUID: die bestaat alleen op https en localhost, niet op een http-adres thuis.
 const cid = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -1222,12 +1229,15 @@ async function loadLiveFilters() {
   const usable = countries.some((c) => c.code !== 'OVERIG') ? countries : [];
   if (!usable.some((c) => c.code === liveFilter.country)) liveFilter.country = '';
   const query = liveFilter.country ? `&country=${encodeURIComponent(liveFilter.country)}` : '';
-  return { countries: usable, groups: await api('GET', `/api/groups?type=live${query}`) };
+  const groups = await api('GET', `/api/groups?type=live${query}`);
+  // Bestaat de bewaarde categorie niet (meer) bij dit land, dan weer alles tonen.
+  if (liveFilter.group && !groups.some((g) => g.name === liveFilter.group)) setLiveGroup('');
+  return { countries: usable, groups };
 }
 
 function chooseCountry(code) {
   liveFilter.country = code;
-  liveFilter.group = '';
+  setLiveGroup('');
   localStorage.setItem(COUNTRY_KEY, code);
 }
 
@@ -1328,7 +1338,7 @@ async function liveView(container) {
       });
 
     const onGroup = (value) => {
-      liveFilter.group = value;
+      setLiveGroup(value);
       viewEl.scrollTop = 0;
       paged.reset();
     };
@@ -1860,6 +1870,7 @@ async function guideView(container) {
       countries.length && countrySelect(countries, onCountry),
       groupSelect(groups, group, (value) => {
         group = value;
+        setLiveGroup(value);
         load();
       }),
     ].filter(Boolean));
