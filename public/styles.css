@@ -648,6 +648,9 @@ html, body { overflow-x: hidden; }
 .pc-big { position: absolute; left: 50%; top: 45%; width: 68px; height: 68px; margin: -34px 0 0 -34px; border-radius: 50%; display: none; place-items: center;
   background: rgba(0, 0, 0, .55); border: 2px solid rgba(255, 255, 255, .85); color: #fff; }
 .pc.paused .pc-big { display: grid; }
+/* Film of serie: de grote afspeel-/pauzeknop staat in het midden zolang de knoppen in beeld zijn. */
+.pc.show:not(.live) .pc-big { display: grid; }
+.pc-big.is-pause .icon { margin-left: 0; }
 .pc-big .icon { width: 30px; height: 30px; margin-left: 4px; }
 .pc-bottom { grid-row: 2; padding: 0 10px calc(6px + var(--safe-b)); display: grid; gap: 2px; }
 .pc-line { display: flex; align-items: center; gap: 10px; }
@@ -677,7 +680,16 @@ html, body { overflow-x: hidden; }
 .pc-btn.pc-cc.on { color: var(--accent); }
 .pc-next { background: rgba(255, 255, 255, .92); color: #111; padding: 0 12px; }
 .pc-next:hover { background: #fff; }
-@media (pointer: coarse) { .pc-mute { display: none; } }
+/* Volume: knop plus schuif, alleen met een muis (telefoons en tv's hebben eigen volumeknoppen). */
+.pc-volume { display: inline-flex; align-items: center; }
+.pc-vol { -webkit-appearance: none; appearance: none; width: 80px; height: 28px; margin: 0 6px 0 2px; padding: 0; border: 0; min-height: 0; box-shadow: none;
+  background: transparent; cursor: pointer; --vol: 100%; }
+.pc-vol:focus { outline: none; border: 0; box-shadow: none; background: transparent; }
+.pc-vol::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, #fff 0 var(--vol), rgba(255, 255, 255, .25) var(--vol)); }
+.pc-vol::-moz-range-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, #fff 0 var(--vol), rgba(255, 255, 255, .25) var(--vol)); }
+.pc-vol::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: #fff; border: 0; }
+.pc-vol::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 0; }
+@media (pointer: coarse) { .pc-volume { display: none; } }
 @media (max-width: 420px) {
   .pc-label { display: none; }
   .pc-row { gap: 0; }
@@ -701,9 +713,14 @@ html, body { overflow-x: hidden; }
 .stage.pseudo-fs { position: fixed; inset: 0; z-index: 30; }
 .stage.pseudo-fs .video-wrap { flex: 1; aspect-ratio: auto; max-height: none; }
 .stage.pseudo-fs .now-bar, .stage.pseudo-fs .stage-info { display: none; }
+/* Volledig scherm in de browser: alleen beeld en de knoppen die vanzelf verdwijnen, geen vaste balk eronder. */
+.stage:fullscreen .now-bar, .stage:fullscreen .stage-info { display: none; }
 .stage.pseudo-fs .close-video, .stage:fullscreen .close-video { display: grid; }
 .stage:fullscreen .video-wrap { flex: 1; aspect-ratio: auto; max-height: none; }
 .pc.counting .pc-big { display: none; }
+/* Het kruisje verdwijnt samen met de knoppen tijdens het afspelen; één tik haalt alles terug. */
+.close-video { transition: opacity .2s; }
+.pc:not(.show):not(.paused) ~ .close-video { opacity: 0; pointer-events: none; }
 .pc-scrub, .pc-scrub:focus { border: 0; padding: 0; min-height: 0; box-shadow: none; outline: none; background: transparent; border-radius: 0; }
 
 /* ---- Begroeting bovenaan Home */

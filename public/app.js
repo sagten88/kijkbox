@@ -634,6 +634,23 @@ const pcNext = pcBtn('Volgende aflevering', () => playNextNow(), icon('next', tr
 pcNext.classList.add('pc-next');
 const pcMute = pcBtn('Geluid uit', () => { video.muted = !video.muted; updatePlayerUi(); }, icon('volume'));
 pcMute.classList.add('pc-mute');
+// Volumeschuif (alleen op een computer; telefoons en tv's regelen het geluid met hun eigen knoppen).
+const VOL_KEY = 'kijkbox-volume';
+const pcVol = h('input', { type: 'range', class: 'pc-vol', min: '0', max: '100', step: '1', 'aria-label': 'Volume', title: 'Volume' });
+try {
+  const saved = Number(localStorage.getItem(VOL_KEY));
+  if (localStorage.getItem(VOL_KEY) !== null && saved >= 0 && saved <= 100) video.volume = saved / 100;
+} catch {}
+pcVol.addEventListener('input', () => {
+  const value = Number(pcVol.value);
+  video.volume = value / 100;
+  video.muted = value === 0;
+  try { localStorage.setItem(VOL_KEY, String(value)); } catch {}
+  updatePlayerUi();
+  pcPoke();
+});
+for (const event of ['click', 'pointerdown', 'touchstart']) pcVol.addEventListener(event, (e) => e.stopPropagation(), { passive: true });
+const pcVolume = h('span', { class: 'pc-volume' }, pcMute, pcVol);
 const pcPip = pcBtn('Beeld-in-beeld', () => togglePip(), icon('pip'));
 const pcFull = pcBtn('Volledig scherm', () => toggleFull(), icon('expand'));
 const pcLive = h('span', { class: 'pc-live' }, 'LIVE');
@@ -645,7 +662,7 @@ const pc = h('div', { class: 'pc' },
   h('div', { class: 'pc-bottom' },
     h('div', { class: 'pc-line' }, pcTime, h('div', { class: 'pc-scrub-wrap' }, h('div', { class: 'pc-avail' }, pcAvail), pcScrub), pcTotal, pcLive),
     h('div', { class: 'pc-row' }, pcPlay, pcSeekBtn(-30), pcSeekBtn(-10), pcSeekBtn(10), pcSeekBtn(30),
-      h('span', { class: 'grow' }), pcNext, pcCc, pcMute, pcPip, pcFull)),
+      h('span', { class: 'grow' }), pcNext, pcCc, pcVolume, pcPip, pcFull)),
   pcNextCard);
 const tvHint = h('div', { class: 'tv-hint' });
 const stage = h('section', { class: 'stage', 'aria-label': 'Speler' },
@@ -1191,7 +1208,12 @@ function updatePlayerUi() {
   pcScrub.style.setProperty('--played', `${played}%`);
   pcScrub.style.setProperty('--avail', `${total ? Math.max(played, Math.min(100, (playerAvailable().to / total) * 100)) : 0}%`);
   pcNext.hidden = live || !tvNext;
-  pcMute.replaceChildren(icon(video.muted ? 'mute' : 'volume'));
+  pcBig.replaceChildren(icon(paused ? 'play' : 'pause', true));
+  pcBig.classList.toggle('is-pause', !paused);
+  pcBig.setAttribute('aria-label', paused ? 'Afspelen' : 'Pauze');
+  pcMute.replaceChildren(icon(video.muted || video.volume === 0 ? 'mute' : 'volume'));
+  pcVol.value = String(video.muted ? 0 : Math.round(video.volume * 100));
+  pcVol.style.setProperty('--vol', `${pcVol.value}%`);
   pcPip.hidden = !pipSupported;
   pcFull.replaceChildren(icon(isFull() ? 'shrink' : 'expand'));
   pcFull.title = isFull() ? 'Volledig scherm uit' : 'Volledig scherm';
@@ -1331,6 +1353,9 @@ function stopRebuffer() {
 }
 
 video.addEventListener('waiting', () => {
+  // Staat hij op pauze, dan niet bufferen: anders gaat hij daarna vanzelf weer spelen.
+  // (Sommige tv's melden 'waiting' ook vlak na het pauzeren.)
+  if (video.paused) return;
   if (!player.hls || !player.started || player.item?.type !== 'live' || video.seeking || player.rebufferTimer) return;
   const seq = player.seq;
   const began = Date.now();
