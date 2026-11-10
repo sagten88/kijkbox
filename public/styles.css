@@ -714,3 +714,10 @@ html, body { overflow-x: hidden; }
 .greeting h1 { font-size: clamp(24px, 4vw, 34px); font-weight: 800; letter-spacing: -.5px; margin: 0 0 2px; }
 .greeting .muted { font-size: 15px; }
 @media (max-width: 699px) { .greeting { margin-bottom: 18px; } .greeting-icon { width: 44px; height: 44px; border-radius: 13px; } .greeting-icon svg { width: 24px; height: 24px; } }
+
+/* ---- Video altijd binnen het vlak (iPhone liggend)
+   Safari rekent de hoogte van een video in een flexibel vak niet uit het vak, maar uit de breedte
+   van de video. Liggend werd hij daardoor hoger dan het scherm en vielen de onderkant en de
+   ondertitels weg. Daarom ligt de video precies over het vak heen. */
+.video-wrap { overflow: hidden; min-height: 0; }
+.video-wrap > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
