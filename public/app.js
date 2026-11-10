@@ -1778,41 +1778,26 @@ async function loadWhatsNew(slot) {
     close));
 }
 
-// Uitgelicht bovenaan Home: een recente film met een goede beoordeling en een achtergrondbeeld.
-const FEATURED_KEY = 'kijkbox-uitgelicht';
+/** Begroeting bovenaan Home, met de tijd van de dag en de naam van wie er kijkt. */
+// Klein icoon bij de begroeting: zon op, zon, zon onder of maan, in de kleur van je profiel.
+const DAY_ICONS = {
+  morgen: '<path d="M3 18h18M7 18a5 5 0 0 1 10 0"/><path d="M12 6v3M5.6 10.6l1.8 1.8M18.4 10.6l-1.8 1.8M2 22h20"/>',
+  middag: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
+  avond: '<path d="M3 16h18M7 16a5 5 0 0 1 10 0"/><path d="M12 4v5M9.5 6.5 12 9l2.5-2.5M6 20h12"/>',
+  nacht: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/><path d="M17 3.5v3M15.5 5h3"/>',
+};
 
-async function loadFeatured(slot) {
-  let pick = null;
-  try {
-    const saved = JSON.parse(sessionStorage.getItem(FEATURED_KEY) || 'null');
-    if (saved && Date.now() - saved.at < 3 * 3600 * 1000) pick = saved.item;
-  } catch {}
-  if (!pick) {
-    try {
-      const { fresh } = await api('GET', '/api/highlights?type=movie');
-      for (const candidate of fresh.filter((i) => Number(i.rating) >= 6.5).slice(0, 5)) {
-        const { backdrop } = await api('GET', `/api/items/${candidate.id}/backdrop`);
-        if (!backdrop) continue;
-        const full = await api('GET', `/api/items/${candidate.id}`);
-        pick = { id: full.id, name: full.name, year: full.year, rating: full.rating, plot: full.plot, backdrop, versions: full.versions?.length };
-        break;
-      }
-      sessionStorage.setItem(FEATURED_KEY, JSON.stringify({ at: Date.now(), item: pick }));
-    } catch {
-      return;
-    }
-  }
-  if (!pick || !slot.isConnected) return;
-  const img = h('img', { src: pick.backdrop, alt: '', onerror: () => slot.replaceChildren() });
-  const rating = Number(pick.rating) > 0 ? `★ ${Number(pick.rating).toFixed(1).replace('.0', '')}` : null;
-  slot.replaceChildren(h('section', { class: 'featured' }, img,
-    h('div', { class: 'featured-text' },
-      h('span', { class: 'pill' }, 'Uitgelicht'),
-      h('h2', {}, clean(pick.name)),
-      h('p', { class: 'muted small' }, [pick.year, rating, pick.versions > 1 && `${pick.versions} talen`].filter(Boolean).join(' · ')),
-      pick.plot && h('p', { class: 'featured-plot' }, pick.plot),
-      h('a', { class: 'btn primary', href: `#/item/${pick.id}` }, icon('play', true), 'Bekijken'))));
-  img.addEventListener('load', () => slot.querySelector('.featured')?.classList.add('loaded'));
+function greeting() {
+  const hour = new Date().getHours();
+  const part = hour < 6 ? 'Goedenacht' : hour < 12 ? 'Goedemorgen' : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
+  const icon = hour < 6 ? 'nacht' : hour < 12 ? 'morgen' : hour < 18 ? 'middag' : 'avond';
+  const mark = h('span', { class: 'greeting-icon', 'aria-hidden': 'true' });
+  mark.innerHTML = `<svg viewBox="0 0 24 24">${DAY_ICONS[icon]}</svg>`;
+  const name = state.user.username.charAt(0).toUpperCase() + state.user.username.slice(1);
+  const today = new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+  return h('header', { class: 'greeting' },
+    mark,
+    h('div', {}, h('h1', {}, `${part}, ${name}`), h('div', { class: 'muted' }, today.charAt(0).toUpperCase() + today.slice(1))));
 }
 
 async function homeView(container) {
@@ -1829,14 +1814,13 @@ async function homeView(container) {
   if (channels.length) liveList = channels;
 
   const page = h('div', { class: 'page home' });
-  // Op de tv geen melding "wat is er nieuw" (die is met de afstandsbediening niet weg te klikken)
-  // en geen grote uitgelichte film bovenaan: Home begint daar meteen bij Verder kijken.
+  // Bovenaan een begroeting. Op de tv geen melding "wat is er nieuw" (die is met de afstandsbediening
+  // niet weg te klikken).
+  page.append(greeting());
   if (!TV) {
     const news = h('div', { class: 'whats-new-slot' });
-    const featured = h('div', { class: 'featured-slot' });
-    page.append(news, featured);
+    page.append(news);
     loadWhatsNew(news);
-    loadFeatured(featured);
   }
   if (continuing.length) page.append(shelf('Verder kijken', h('div', { class: 'shelf-row' }, continuing.map((item) => posterCard(item, { resume: true })))));
   if (channels.length) {

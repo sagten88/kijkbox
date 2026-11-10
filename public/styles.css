@@ -705,3 +705,12 @@ html, body { overflow-x: hidden; }
 .stage:fullscreen .video-wrap { flex: 1; aspect-ratio: auto; max-height: none; }
 .pc.counting .pc-big { display: none; }
 .pc-scrub, .pc-scrub:focus { border: 0; padding: 0; min-height: 0; box-shadow: none; outline: none; background: transparent; border-radius: 0; }
+
+/* ---- Begroeting bovenaan Home */
+.greeting { display: flex; align-items: center; gap: 16px; margin: 6px 0 26px; }
+.greeting-icon { width: 54px; height: 54px; flex: none; display: grid; place-items: center; border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.greeting-icon svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.greeting h1 { font-size: clamp(24px, 4vw, 34px); font-weight: 800; letter-spacing: -.5px; margin: 0 0 2px; }
+.greeting .muted { font-size: 15px; }
+@media (max-width: 699px) { .greeting { margin-bottom: 18px; } .greeting-icon { width: 44px; height: 44px; border-radius: 13px; } .greeting-icon svg { width: 24px; height: 24px; } }
