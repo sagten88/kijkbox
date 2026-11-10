@@ -333,7 +333,11 @@ function launch(session) {
     // Pas als ffmpeg alle sporen van de invoer heeft genoemd ("Stream mapping") beslissen.
     if (!/Stream mapping:/.test(head)) return;
     checked = true;
-    const video = /Stream #0:\d+[^\n]*?: Video: (\w+)/.exec(head);
+    // Lengte van de bron (films, afleveringen). De speler toont zo meteen de echte duur en weet
+    // waar hij heen kan spoelen, ook voorbij het stuk dat al is omgezet.
+    const length = /Duration: (\d+):(\d\d):(\d\d(?:\.\d+)?)/.exec(head);
+    if (length && !session.live) session.duration = Number(length[1]) * 3600 + Number(length[2]) * 60 + Number(length[3]);
+    const video =/Stream #0:\d+[^\n]*?: Video: (\w+)/.exec(head);
     let restart = false;
     // Alleen H.264 speelt overal af. HEVC en anderen worden dus automatisch omgezet.
     if (video && !session.transcode && video[1] !== 'h264') {
@@ -446,6 +450,9 @@ async function startFfmpeg(item, { cid, transcode, live, start, native }) {
     const dir = path.join(config.tempDir, id);
     fs.mkdirSync(dir);
     session = { id, key, dir, item, url: item.url, live, transcode, start, viewers: new Map(), startedAt: Date.now() };
+    // Bij spoelen naar een nieuw punt start een nieuwe sessie vlak nadat de vorige is gesloten. De provider
+    // houdt die verbinding soms nog even bezet: dan net als bij een herstart een paar keer opnieuw proberen.
+    if (!live) session.restartedAt = Date.now();
     sessions.set(id, session);
     byKey.set(key, session);
     launch(session);
@@ -459,7 +466,10 @@ async function startFfmpeg(item, { cid, transcode, live, start, native }) {
     releaseViewer(cid);
     throw err;
   }
-  return { kind: 'hls', url: `/s/t/${session.id}/${cid}/index.m3u8`, base: start, mode: session.transcode ? 'transcode' : 'remux' };
+  return {
+    kind: 'hls', url: `/s/t/${session.id}/${cid}/index.m3u8`, base: start, mode: session.transcode ? 'transcode' : 'remux',
+    duration: session.duration && session.duration > start ? Math.round(session.duration) : undefined,
+  };
 }
 
 /** Apple's speler start stabieler als de afspeellijst al een paar segmenten bevat. */

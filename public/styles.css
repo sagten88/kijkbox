@@ -639,9 +639,69 @@ html, body { overflow-x: hidden; }
 .modal-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .modal .btn.danger { border-color: color-mix(in srgb, var(--danger) 50%, var(--line)); }
 
-/* ---- Spoelknoppen onder het beeld (computer en telefoon) */
-.seek-row { display: flex; justify-content: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.seek-row[hidden] { display: none; }
-.seek-btn { min-width: 64px; gap: 4px; font-variant-numeric: tabular-nums; }
-.seek-btn .icon { width: 16px; height: 16px; }
-body.tv .seek-row { display: none; }
+/* ---- Eigen speler: knoppen over het beeld (computer, telefoon, iPhone) */
+.pc { position: absolute; inset: 0; z-index: 1; display: grid; grid-template-rows: 1fr auto; opacity: 0; transition: opacity .2s;
+  background: linear-gradient(transparent 55%, rgba(0, 0, 0, .7)); color: #fff; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.pc.show, .pc.paused { opacity: 1; }
+.pc:not(.show):not(.paused) { cursor: none; }
+.pc:not(.show):not(.paused) .pc-bottom, .pc:not(.show):not(.paused) .pc-big { pointer-events: none; }
+.pc-big { position: absolute; left: 50%; top: 45%; width: 68px; height: 68px; margin: -34px 0 0 -34px; border-radius: 50%; display: none; place-items: center;
+  background: rgba(0, 0, 0, .55); border: 2px solid rgba(255, 255, 255, .85); color: #fff; }
+.pc.paused .pc-big { display: grid; }
+.pc-big .icon { width: 30px; height: 30px; margin-left: 4px; }
+.pc-bottom { grid-row: 2; padding: 0 10px calc(6px + var(--safe-b)); display: grid; gap: 2px; }
+.pc-line { display: flex; align-items: center; gap: 10px; }
+.pc-time { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 38px; text-align: center; text-shadow: 0 1px 3px rgba(0, 0, 0, .6); }
+.pc-scrub-wrap { position: relative; flex: 1; height: 28px; display: grid; align-items: center; }
+.pc-avail { display: none; }
+/* Eén balk: gekleurd tot waar je bent, lichtgrijs tot waar de server al is, daarna donker. */
+.pc-scrub { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 0; background: transparent; cursor: pointer; --played: 0%; --avail: 0%; }
+.pc-scrub::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) 0 var(--played), rgba(255, 255, 255, .45) var(--played) var(--avail), rgba(255, 255, 255, .18) var(--avail)); }
+.pc-scrub::-moz-range-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) 0 var(--played), rgba(255, 255, 255, .45) var(--played) var(--avail), rgba(255, 255, 255, .18) var(--avail)); }
+.pc-scrub::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; }
+.pc-scrub::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; }
+.pc-scrub:disabled { opacity: .4; }
+.pc-live { display: none; font-size: 12px; font-weight: 800; letter-spacing: .08em; padding: 2px 8px; border-radius: 4px; background: #e5484d; }
+.pc.live .pc-live { display: inline-block; }
+.pc.live .pc-scrub-wrap, .pc.live .pc-time, .pc.live .pc-row > .pc-btn:nth-child(n+2):nth-child(-n+5), .pc.live .pc-next { display: none; }
+.pc.live .pc-line { justify-content: flex-start; }
+.pc-row { display: flex; align-items: center; gap: 2px; }
+.pc-btn { min-width: 38px; height: 38px; padding: 0 6px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  color: #fff; font-size: 12px; font-weight: 700; }
+.pc-btn:hover { background: rgba(255, 255, 255, .14); }
+.pc-btn .icon { width: 20px; height: 20px; }
+.pc-btn[hidden] { display: none; }
+.pc-btn.pc-cc { font-size: 13px; letter-spacing: .04em; }
+.pc-btn.pc-cc.on { color: var(--accent); }
+.pc-next { background: rgba(255, 255, 255, .92); color: #111; padding: 0 12px; }
+.pc-next:hover { background: #fff; }
+@media (pointer: coarse) { .pc-mute { display: none; } }
+@media (max-width: 420px) {
+  .pc-label { display: none; }
+  .pc-row { gap: 0; }
+  .pc-btn { min-width: 32px; padding: 0 3px; gap: 1px; font-size: 11px; }
+  .pc-btn .icon { width: 18px; height: 18px; }
+  .pc-next { padding: 0 8px; }
+  .pc-time { min-width: 32px; font-size: 12px; }
+}
+.pc-ripple { position: absolute; top: 0; bottom: 0; width: 40%; display: grid; place-items: center; font-size: 22px; font-weight: 800; opacity: 0; pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 255, 255, .18), transparent 70%); }
+.pc-ripple.left { left: 0; }
+.pc-ripple.right { right: 0; }
+.pc-ripple.go { animation: pc-ripple .45s ease-out; }
+@keyframes pc-ripple { from { opacity: 1; } to { opacity: 0; } }
+.pc-next-card { position: absolute; right: 12px; bottom: 96px; z-index: 2; display: grid; gap: 6px; max-width: min(320px, calc(100% - 24px)); padding: 12px 14px;
+  border-radius: var(--r-sm); background: rgba(16, 18, 22, .92); border: 1px solid rgba(255, 255, 255, .15); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+.pc-next-card[hidden] { display: none; }
+.pc-next-card b { font-size: 15px; }
+.pc-next-actions { display: flex; gap: 8px; margin-top: 4px; }
+/* Schermvullend binnen de pagina (iPhone): de speler bedekt het hele scherm */
+.stage.pseudo-fs { position: fixed; inset: 0; z-index: 30; }
+.stage.pseudo-fs .video-wrap { flex: 1; aspect-ratio: auto; max-height: none; }
+.stage.pseudo-fs .now-bar, .stage.pseudo-fs .stage-info { display: none; }
+.stage.pseudo-fs .close-video, .stage:fullscreen .close-video { display: grid; }
+.stage:fullscreen .video-wrap { flex: 1; aspect-ratio: auto; max-height: none; }
+.pc.counting .pc-big { display: none; }
+.pc-scrub, .pc-scrub:focus { border: 0; padding: 0; min-height: 0; box-shadow: none; outline: none; background: transparent; border-radius: 0; }

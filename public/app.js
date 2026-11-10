@@ -35,6 +35,11 @@ const ICONS = {
   replay: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
   forward: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
   next: '<path d="M5 5v14l10-7z"/><path d="M19 5v14"/>',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  shrink: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
+  pip: '<rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>',
+  volume: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
+  mute: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="m17 9 5 6M22 9l-5 6"/>',
   home: '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   list: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
@@ -577,8 +582,9 @@ function setupScreen() {
 
 // ---- Speler
 
-// Op de tv bedien je de speler met de afstandsbediening, dus daar zonder de knoppen van de browser.
-const video = h('video', { controls: !TV, playsInline: true, preload: 'auto' });
+// Kijkbox heeft een eigen bediening (zie "Eigen speler"), ook op de iPhone. Zo blijven spoelen,
+// ondertitels en "volgende aflevering" werken en neemt de speler van Apple het scherm niet over.
+const video = h('video', { controls: false, playsInline: true, preload: 'auto' });
 video.setAttribute('playsinline', '');
 // Een doorzichtige afbeelding, anders toont Android tijdens het laden een grote grijze afspeelknop.
 video.poster = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -606,22 +612,49 @@ const tvNextEp = tvBtn('tv-next', 'Volgende aflevering', () => tvPlayNext(), ico
 const ccButton = h('button', { class: 'icon-btn cc-btn', 'aria-label': 'Ondertitels', onclick: () => cycleSubtitles() });
 const tvCc = tvBtn('tv-cc', 'Ondertitels', () => cycleSubtitles());
 const tvControls = h('div', { class: 'tv-controls' }, tvBack30, tvBack10, tvPlay, tvFwd10, tvFwd30, tvCc, tvNextEp);
-// Computer en telefoon: spoelknoppen onder het beeld (de gewone videobalk heeft die niet). Niet bij live.
-const seekBtn = (seconds) => h('button', {
-  class: 'btn compact seek-btn', type: 'button',
-  'aria-label': `${Math.abs(seconds)} seconden ${seconds < 0 ? 'terug' : 'vooruit'}`,
-  onclick: () => tvSeek(seconds),
-}, seconds < 0 ? [icon('replay'), `${-seconds}`] : [`${seconds}`, icon('forward')]);
-const seekRow = h('div', { class: 'seek-row' }, seekBtn(-30), seekBtn(-10), seekBtn(10), seekBtn(30));
+// ---- Eigen speler (computer, telefoon en iPhone; de tv heeft zijn eigen balk hieronder)
+// Knoppen over het beeld: tijdbalk, spoelen (10 en 30 seconden), ondertitels, volgende aflevering,
+// beeld-in-beeld en volledig scherm. Op een aanraakscherm: één keer tikken toont of verbergt de
+// knoppen, dubbeltikken links of rechts spoelt 10 seconden.
+const pcTime = h('span', { class: 'pc-time' }, '0:00');
+const pcTotal = h('span', { class: 'pc-time' });
+const pcScrub = h('input', { type: 'range', class: 'pc-scrub', min: '0', max: '1000', step: '1', value: '0', 'aria-label': 'Tijdbalk' });
+const pcAvail = h('i');
+const pcBtn = (label, onclick, ...kids) => h('button', {
+  type: 'button', class: 'pc-btn', 'aria-label': label, title: label,
+  onclick: (event) => { event.stopPropagation(); onclick(); pcPoke(); },
+}, ...kids);
+const pcSeekBtn = (s) => pcBtn(`${Math.abs(s)} seconden ${s < 0 ? 'terug' : 'vooruit'}`, () => seekBy(s),
+  ...(s < 0 ? [icon('replay'), h('span', {}, String(-s))] : [h('span', {}, String(s)), icon('forward')]));
+const pcPlay = pcBtn('Afspelen', () => togglePlay(), icon('play', true));
+const pcBig = h('button', { type: 'button', class: 'pc-big', 'aria-label': 'Afspelen', onclick: (e) => { e.stopPropagation(); togglePlay(); pcPoke(); } }, icon('play', true));
+const pcCc = pcBtn('Ondertitels', () => cycleSubtitles());
+pcCc.classList.add('pc-cc');
+const pcNext = pcBtn('Volgende aflevering', () => playNextNow(), icon('next', true), h('span', { class: 'pc-label' }, 'Volgende'));
+pcNext.classList.add('pc-next');
+const pcMute = pcBtn('Geluid uit', () => { video.muted = !video.muted; updatePlayerUi(); }, icon('volume'));
+pcMute.classList.add('pc-mute');
+const pcPip = pcBtn('Beeld-in-beeld', () => togglePip(), icon('pip'));
+const pcFull = pcBtn('Volledig scherm', () => toggleFull(), icon('expand'));
+const pcLive = h('span', { class: 'pc-live' }, 'LIVE');
+const pcRipple = h('div', { class: 'pc-ripple' });
+const pcNextCard = h('div', { class: 'pc-next-card', hidden: true });
+const pc = h('div', { class: 'pc' },
+  pcRipple,
+  pcBig,
+  h('div', { class: 'pc-bottom' },
+    h('div', { class: 'pc-line' }, pcTime, h('div', { class: 'pc-scrub-wrap' }, h('div', { class: 'pc-avail' }, pcAvail), pcScrub), pcTotal, pcLive),
+    h('div', { class: 'pc-row' }, pcPlay, pcSeekBtn(-30), pcSeekBtn(-10), pcSeekBtn(10), pcSeekBtn(30),
+      h('span', { class: 'grow' }), pcNext, pcCc, pcMute, pcPip, pcFull)),
+  pcNextCard);
 const tvHint = h('div', { class: 'tv-hint' });
 const stage = h('section', { class: 'stage', 'aria-label': 'Speler' },
-  h('div', { class: 'video-wrap' }, video, videoMsg,
+  h('div', { class: 'video-wrap' }, video, TV ? null : pc, videoMsg,
     h('button', { class: 'icon-btn close-video', 'aria-label': 'Sluiten', onclick: () => stopPlayback() }, icon('close'))),
   h('div', { class: 'now-bar' },
     h('div', { class: 'grow' }, nowTitle, nowSub, tvProgress, tvControls, tvHint),
     prevButton, nextButton, ccButton, favButton,
     h('button', { class: 'icon-btn', 'aria-label': 'Stoppen', onclick: () => stopPlayback() }, icon('close'))),
-  seekRow,
   stageInfo);
 
 // ---- Ondertitels (uit het bestand zelf, anders via de server van OpenSubtitles)
@@ -656,7 +689,7 @@ function updateCcButtons() {
   const show = subtitlesPossible();
   const label = subPref ? subPref.toUpperCase() : 'CC';
   const title = subPref ? `Ondertitels: ${SUB_LANGS[subPref]}` : 'Ondertitels uit';
-  for (const b of [ccButton, tvCc]) {
+  for (const b of [ccButton, tvCc, pcCc]) {
     b.hidden = !show;
     b.style.display = show ? '' : 'none';
     b.textContent = label;
@@ -771,7 +804,7 @@ function saveProgress(force = false) {
   if (position < 5) return;
   // Alleen een vaste lengte doorgeven. Tijdens het omzetten groeit de duur nog, en dan zou
   // een aflevering ten onrechte als uitgekeken kunnen tellen.
-  const total = tvKnownEnd() && Number.isFinite(video.duration) ? player.base + video.duration : 0;
+  const total = playerTotal();
   api('POST', `/api/progress/${item.id}`, { position, duration: total }).catch(() => {});
 }
 
@@ -794,6 +827,9 @@ stage.addEventListener('click', fillScreen);
 
 function stopPlayback() {
   leaveFullScreen();
+  cancelNextCountdown();
+  clearTimeout(seekRestart);
+  stage.classList.remove('pseudo-fs');
   clearSubtitles();
   saveProgress(true);
   player.seq += 1;
@@ -847,6 +883,10 @@ function playbackFailed(seq) {
 function attach(info, seq) {
   player.mode = info.mode;
   player.base = info.base || 0;
+  // De echte lengte (van de server bij omgezette streams); anders volgt die uit de video zelf.
+  player.duration = info.duration || 0;
+  updatePlayerUi();
+  pcPoke();
   player.watchdog = setTimeout(() => playbackFailed(seq), 25000);
 
   const useNative = info.kind === 'file' || !window.Hls?.isSupported() || isAppleTouch();
@@ -908,6 +948,8 @@ async function start(item, { mode = 'auto', resume = 0 } = {}) {
     player.retried = false;
   }
   player.lastError = null;
+  player.duration = 0;
+  cancelNextCountdown();
   player.item = item;
   player.embeddedSubs = null;
   player.requested = mode;
@@ -920,10 +962,9 @@ async function start(item, { mode = 'auto', resume = 0 } = {}) {
   showMessage('Laden…');
   updateNowBar(item);
   markPlaying();
-  if (TV) {
-    tvLoadNext(item);
-    tvShowBar();
-  }
+  // Bij een aflevering alvast de volgende opzoeken (knop "Volgende" en aftellen aan het einde).
+  tvLoadNext(item);
+  if (TV) tvShowBar();
   if (item.type === 'live') localStorage.setItem(LAST_CHANNEL_KEY, String(item.id));
   if (item.catchup) toast(`Terugkijken: ${item.name}`);
   try {
@@ -953,7 +994,6 @@ function updateNowBar(item) {
   nowSub.textContent = item.now?.title || clean(item.group);
   const live = item.type === 'live';
   prevButton.hidden = nextButton.hidden = !live;
-  seekRow.hidden = live || TV;
   prevButton.style.display = nextButton.style.display = live ? '' : 'none';
   clearSubtitles();
   updateCcButtons();
@@ -988,8 +1028,10 @@ function zap(direction) {
 }
 
 video.addEventListener('loadedmetadata', () => {
-  // Bij omgezette streams begint de video al op de juiste plek.
-  if (player.resume && !player.base) video.currentTime = player.resume;
+  // Bij omgezette streams begint de video al (bijna) op de juiste plek; het verschil nog spoelen.
+  // (Terugkijken begint op een hele minuut, rechtstreekse streams bij 0.)
+  const offset = player.resume - player.base;
+  if (offset > 1) video.currentTime = offset;
 });
 video.addEventListener('playing', () => {
   clearTimeout(player.watchdog);
@@ -1025,12 +1067,239 @@ video.addEventListener('ended', () => {
   if (item?.type === 'live') restartLive();
   else if (item) {
     api('POST', `/api/progress/${item.id}`, { finished: true }).catch(() => {});
-    if (TV && tvNext) {
-      tvNextShown = true;
-      tvShowBar(tvNextEp);
-    }
+    // Serie: na een korte aftelling vanzelf door naar de volgende aflevering.
+    if (tvNext) startNextCountdown();
   }
 });
+
+// ---- Tijd en spoelen (eigen speler en tv)
+// Bij een stream die de server omzet, begint de video bij `player.base` seconden. De echte lengte
+// komt van de server (player.duration). Spoelen binnen wat al is omgezet gaat meteen; daarbuiten
+// start de server opnieuw vanaf dat punt.
+
+// Tijdens het (opnieuw) laden telt de plek waar het naartoe gaat, zodat snel achter elkaar spoelen optelt.
+const playerPos = () => (!player.started && player.resume ? player.resume : player.base + (video.currentTime || 0));
+let seekRestart = null;
+
+function playerTotal() {
+  if (player.duration) return player.duration;
+  const span = player.item?.catchup && (Math.min(player.item.catchup.stop, Date.now()) - player.item.catchup.start) / 1000;
+  if (span > 0) return span;
+  return tvKnownEnd() && Number.isFinite(video.duration) ? player.base + video.duration : 0;
+}
+
+/** Tot waar de speler nu al kan (wat de server al heeft omgezet), in seconden vanaf het begin. */
+function playerAvailable() {
+  const { seekable } = video;
+  if (!seekable.length) return { from: player.base, to: player.base };
+  return { from: player.base + seekable.start(0), to: player.base + seekable.end(seekable.length - 1) };
+}
+
+function seekTo(target) {
+  const { item } = player;
+  if (!item || item.type === 'live') return;
+  cancelNextCountdown();
+  const total = playerTotal();
+  const t = Math.max(0, total ? Math.min(target, total - 2) : target);
+  const { from, to } = playerAvailable();
+  if (player.started && t >= from && t <= to - 1) {
+    video.currentTime = t - player.base;
+  } else if (player.started && player.mode === 'direct') {
+    // Rechtstreekse stream: verder dan de speler kan, gaat niet.
+    video.currentTime = Math.max(from, Math.min(to - 1, t)) - player.base;
+  } else {
+    // Nog niet omgezet (of ervoor): de server begint daar opnieuw. Even wachten of er nog
+    // vaker wordt gedrukt, dan maar één keer opnieuw laden.
+    if (player.started) saveProgress(true);
+    player.started = false;
+    player.resume = t;
+    video.pause();
+    showMessage('Laden…');
+    clearTimeout(seekRestart);
+    const mode = player.mode === 'transcode' ? 'transcode' : player.mode === 'direct' ? 'auto' : 'remux';
+    seekRestart = setTimeout(() => { if (player.item === item) start(item, { mode, resume: t }); }, 400);
+  }
+  updatePlayerUi();
+}
+
+const seekBy = (seconds) => seekTo(playerPos() + seconds);
+
+function togglePlay() {
+  if (video.paused) video.play().catch(() => {});
+  else video.pause();
+}
+
+// ---- Volledig scherm en beeld-in-beeld
+// De iPhone kan alleen de video zelf schermvullend maken, en dan neemt de speler van Apple het
+// over. Daarom daar "schermvullend" binnen de pagina: de speler bedekt het hele scherm.
+const canStageFullscreen = Boolean(stage.requestFullscreen) && document.fullscreenEnabled;
+const isFull = () => document.fullscreenElement === stage || stage.classList.contains('pseudo-fs');
+
+function toggleFull() {
+  if (isFull()) {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    stage.classList.remove('pseudo-fs');
+  } else if (canStageFullscreen) {
+    stage.requestFullscreen({ navigationUI: 'hide' }).catch(() => stage.classList.add('pseudo-fs'));
+  } else {
+    stage.classList.add('pseudo-fs');
+  }
+  setTimeout(updatePlayerUi, 100);
+}
+document.addEventListener('fullscreenchange', () => updatePlayerUi());
+
+const pipSupported = Boolean(document.pictureInPictureEnabled) || typeof video.webkitSetPresentationMode === 'function';
+function togglePip() {
+  if (document.pictureInPictureElement) {
+    document.exitPictureInPicture().catch(() => {});
+  } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+    video.requestPictureInPicture().catch(() => {});
+  } else if (video.webkitSetPresentationMode) {
+    video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+  }
+}
+
+// ---- Knoppen tonen en verbergen
+let pcHideTimer = null;
+let pcDragging = false;
+
+function pcPoke() {
+  if (TV) return;
+  pc.classList.add('show');
+  clearTimeout(pcHideTimer);
+  pcHideTimer = setTimeout(() => { if (!video.paused && !pcDragging) pc.classList.remove('show'); }, 3000);
+}
+
+function updatePlayerUi() {
+  if (TV || !player.item) return;
+  const live = player.item.type === 'live';
+  const paused = video.paused;
+  pc.classList.toggle('live', live);
+  pc.classList.toggle('paused', paused);
+  pcPlay.replaceChildren(icon(paused ? 'play' : 'pause', paused));
+  pcPlay.setAttribute('aria-label', paused ? 'Afspelen' : 'Pauze');
+  pcPlay.title = paused ? 'Afspelen' : 'Pauze';
+  const total = playerTotal();
+  const pos = playerPos();
+  if (!pcDragging) {
+    pcTime.textContent = clock(pos);
+    pcScrub.value = String(total ? Math.round((pos / total) * 1000) : 0);
+  }
+  pcTotal.textContent = total ? clock(total) : '';
+  pcScrub.disabled = !total;
+  const played = total ? Math.min(100, ((pcDragging ? (Number(pcScrub.value) / 1000) * total : pos) / total) * 100) : 0;
+  pcScrub.style.setProperty('--played', `${played}%`);
+  pcScrub.style.setProperty('--avail', `${total ? Math.max(played, Math.min(100, (playerAvailable().to / total) * 100)) : 0}%`);
+  pcNext.hidden = live || !tvNext;
+  pcMute.replaceChildren(icon(video.muted ? 'mute' : 'volume'));
+  pcPip.hidden = !pipSupported;
+  pcFull.replaceChildren(icon(isFull() ? 'shrink' : 'expand'));
+  pcFull.title = isFull() ? 'Volledig scherm uit' : 'Volledig scherm';
+}
+
+pcScrub.addEventListener('input', () => {
+  pcDragging = true;
+  const total = playerTotal();
+  pcTime.textContent = clock((Number(pcScrub.value) / 1000) * total);
+  updatePlayerUi();
+  pcPoke();
+});
+pcScrub.addEventListener('change', () => {
+  pcDragging = false;
+  seekTo((Number(pcScrub.value) / 1000) * playerTotal());
+});
+for (const event of ['click', 'pointerdown', 'touchstart']) pcScrub.addEventListener(event, (e) => e.stopPropagation(), { passive: true });
+
+function pcRippleShow(text, side) {
+  pcRipple.textContent = text;
+  pcRipple.className = `pc-ripple ${side} go`;
+  setTimeout(() => pcRipple.classList.remove('go'), 450);
+}
+
+// Tikken en klikken op het beeld.
+const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
+let pcLastTap = 0;
+let pcTapTimer = null;
+pc.addEventListener('click', (event) => {
+  if (event.target.closest('button, input, .pc-next-card')) return;
+  if (finePointer.matches) {
+    togglePlay();
+    pcPoke();
+    return;
+  }
+  const rect = pc.getBoundingClientRect();
+  const x = (event.clientX - rect.left) / rect.width;
+  const now = Date.now();
+  if (now - pcLastTap < 320 && player.item?.type !== 'live') {
+    clearTimeout(pcTapTimer);
+    pcLastTap = 0;
+    if (x < 0.4) { seekBy(-10); pcRippleShow('−10', 'left'); } else if (x > 0.6) { seekBy(10); pcRippleShow('+10', 'right'); } else toggleFull();
+    pcPoke();
+    return;
+  }
+  pcLastTap = now;
+  clearTimeout(pcTapTimer);
+  pcTapTimer = setTimeout(() => {
+    if (pc.classList.contains('show')) pc.classList.remove('show');
+    else pcPoke();
+  }, 320);
+});
+pc.addEventListener('dblclick', (event) => {
+  if (finePointer.matches && !event.target.closest('button, input')) toggleFull();
+});
+pc.addEventListener('mousemove', () => pcPoke());
+for (const name of ['play', 'pause', 'timeupdate', 'durationchange', 'progress', 'volumechange', 'loadedmetadata']) {
+  video.addEventListener(name, () => updatePlayerUi());
+}
+video.addEventListener('pause', () => pcPoke());
+
+// ---- Volgende aflevering: aftellen na het einde
+let nextCountdown = null;
+
+function nextLabel(next) {
+  const code = next.season ? `S${next.season} E${next.episode}` : '';
+  return [code, clean(next.name ?? '')].filter(Boolean).join(' · ');
+}
+
+function startNextCountdown(seconds = 10) {
+  cancelNextCountdown();
+  if (!tvNext) return;
+  let left = seconds;
+  const tick = () => {
+    if (left <= 0) return playNextNow();
+    if (TV) {
+      tvNextShown = true;
+      tvNextEp.replaceChildren(icon('next', true), h('span', {}, `Volgende aflevering (${left})`));
+      tvShowBar(tvNextEp);
+    } else {
+      pcNextCard.hidden = false;
+      pc.classList.add('counting');
+      pcNextCard.replaceChildren(
+        h('div', { class: 'muted small' }, `Volgende aflevering over ${left} s`),
+        h('b', {}, nextLabel(tvNext)),
+        h('div', { class: 'pc-next-actions' },
+          h('button', { type: 'button', class: 'btn primary compact', onclick: (e) => { e.stopPropagation(); playNextNow(); } }, icon('play', true), 'Nu afspelen'),
+          h('button', { type: 'button', class: 'btn compact', onclick: (e) => { e.stopPropagation(); cancelNextCountdown(); } }, 'Annuleren')));
+      pc.classList.add('show');
+    }
+    left -= 1;
+  };
+  tick();
+  nextCountdown = setInterval(tick, 1000);
+}
+
+function cancelNextCountdown() {
+  clearInterval(nextCountdown);
+  nextCountdown = null;
+  pcNextCard.hidden = true;
+  pc.classList.remove('counting');
+  tvNextEp.replaceChildren(icon('next', true), h('span', {}, 'Volgende aflevering'));
+}
+
+function playNextNow() {
+  cancelNextCountdown();
+  tvPlayNext();
+}
 
 // ---- Live: bij een lege buffer even bufferen in plaats van telkens kort haperen.
 // De provider levert met horten en stoten. Loopt de buffer leeg, dan wacht de speler tot er
@@ -1131,6 +1400,11 @@ document.addEventListener('keydown', (event) => {
     if (player.item.type !== 'live') return;
     event.preventDefault();
     zap(event.key === 'ArrowUp' ? -1 : 1);
+  } else if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && player.item.type !== 'live') {
+    // Pijltjes: 10 seconden; met Shift 30 seconden.
+    event.preventDefault();
+    seekBy((event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 30 : 10));
+    pcPoke();
   } else if (event.key === 'f') {
     if (document.fullscreenElement) document.exitFullscreen();
     else video.requestFullscreen?.();
@@ -2865,7 +3139,8 @@ function tvKnownEnd() {
 }
 
 function tvNearEnd() {
-  return Boolean(tvNext) && tvKnownEnd() && video.duration - video.currentTime <= 30;
+  const total = playerTotal();
+  return Boolean(tvNext) && total > 0 && total - playerPos() <= 30;
 }
 
 function tvCheckNext() {
@@ -2894,11 +3169,12 @@ function tvPlayNext() {
 function tvLoadNext(item) {
   tvNext = null;
   tvNextShown = false;
-  if (!TV || item.type !== 'episode' || !item.parentId) return;
+  if (item.type !== 'episode' || !item.parentId) return;
   api('GET', `/api/items/${item.parentId}`).then(({ episodes = [] }) => {
     if (player.item?.id !== item.id) return;
     const index = episodes.findIndex((e) => e.id === item.id);
     tvNext = index >= 0 ? episodes[index + 1] ?? null : null;
+    updatePlayerUi();
   }).catch(() => {});
 }
 
@@ -2912,10 +3188,8 @@ function tvUpdateTime() {
     tvHint.textContent = 'Omhoog/omlaag: andere zender · OK: pauze · Terug: stoppen';
     return;
   }
-  const position = player.base + (video.currentTime || 0);
-  // Bij een aflevering die nog wordt omgezet, groeit de duur nog. Toon de lengte pas als die vaststaat.
-  const known = tvKnownEnd();
-  const total = known && Number.isFinite(video.duration) ? player.base + video.duration : 0;
+  const position = playerPos();
+  const total = playerTotal();
   tvPos.textContent = clock(position);
   tvTotal.textContent = total ? clock(total) : '…';
   tvFill.style.width = total ? `${Math.min(100, (position / total) * 100)}%` : '0%';
@@ -2926,10 +3200,7 @@ function tvUpdateTime() {
 }
 
 function tvSeek(seconds) {
-  const { seekable } = video;
-  if (!seekable.length) return;
-  const end = seekable.end(seekable.length - 1) - 1;
-  video.currentTime = Math.max(seekable.start(0), Math.min(end, video.currentTime + seconds));
+  seekBy(seconds);
 }
 
 function tvClosePlayer() {
