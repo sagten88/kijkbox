@@ -674,6 +674,8 @@ pcMidBack.classList.add('pc-mid');
 pcMidFwd.classList.add('pc-mid');
 const pcCenter = h('div', { class: 'pc-center' }, pcMidBack, pcBig, pcMidFwd);
 const pcTop = h('div', { class: 'pc-top' });
+// Rechtsboven: de kleine knoppen samen op een donker, doorschijnend plaatje, zodat ze op elk beeld leesbaar blijven.
+const pcTools = h('div', { class: 'pc-tools' });
 const pcLine = h('div', { class: 'pc-line' }, pcTime, h('div', { class: 'pc-scrub-wrap' }, h('div', { class: 'pc-avail' }, pcAvail), pcScrub), pcTotal, pcLive);
 const pcRow = h('div', { class: 'pc-row' });
 const pcRowSeek = [pcSeekBtn(-30), pcSeekBtn(-10), pcSeekBtn(10), pcSeekBtn(30)];
@@ -695,7 +697,8 @@ function layoutPc() {
   pc.classList.toggle('compact', compact);
   if (compact) {
     // Volume (alleen met een muis zichtbaar) staat dan bovenin, bij de andere knoppen.
-    pcTop.replaceChildren(pcNext, h('span', { class: 'grow' }), pcVolume, pcCc, pcAirplay, pcPip);
+    pcTools.replaceChildren(pcVolume, pcCc, pcAirplay, pcPip);
+    pcTop.replaceChildren(pcNext, h('span', { class: 'grow' }), pcTools);
     pcLine.append(pcFull);
     pcRow.replaceChildren();
   } else {
@@ -1208,8 +1211,11 @@ function toggleFull() {
 }
 document.addEventListener('fullscreenchange', () => updatePlayerUi());
 
-const pipSupported = Boolean(document.pictureInPictureEnabled) || typeof video.webkitSetPresentationMode === 'function';
-const PIP_FAILED = 'Beeld-in-beeld lukt hier niet. Open Kijkbox in Safari in plaats van via het beginscherm en probeer het opnieuw.';
+// Op iPhone en iPad staat Apple beeld-in-beeld niet toe in een app op het beginscherm, alleen in Safari.
+// Daar laten we de knop dus weg.
+const iosHomeScreenApp = isAppleTouch() && (navigator.standalone === true || matchMedia('(display-mode: standalone)').matches);
+const pipSupported = !iosHomeScreenApp && (Boolean(document.pictureInPictureEnabled) || typeof video.webkitSetPresentationMode === 'function');
+const PIP_FAILED = 'Beeld-in-beeld lukt hier niet.';
 function togglePip() {
   // iPhone en iPad: de eigen manier van Apple werkt daar het betrouwbaarst.
   if (isAppleTouch() && typeof video.webkitSetPresentationMode === 'function') {
@@ -1218,35 +1224,14 @@ function togglePip() {
     try {
       video.webkitSetPresentationMode(inPip ? 'inline' : 'picture-in-picture');
     } catch {
-      return toast(PIP_FAILED);
-    }
-    // Weigert iOS het zonder foutmelding, dan dat alsnog laten weten. Tijdelijk met wat er gebeurde
-    // (welke standen, na hoeveel tijd), zodat we op een echte iPhone kunnen zien waar het misgaat.
-    if (!inPip) {
-      const began = Date.now();
-      const steps = [];
-      const note = (what) => steps.push(`${what} ${((Date.now() - began) / 1000).toFixed(1)}s`);
-      const onMode = () => note(video.webkitPresentationMode);
-      const onPause = () => note('pauze');
-      const onError = () => note(`fout ${video.error?.code ?? ''}`);
-      video.addEventListener('webkitpresentationmodechanged', onMode);
-      video.addEventListener('pause', onPause);
-      video.addEventListener('error', onError);
-      setTimeout(() => {
-        video.removeEventListener('webkitpresentationmodechanged', onMode);
-        video.removeEventListener('pause', onPause);
-        video.removeEventListener('error', onError);
-        if (video.webkitPresentationMode !== 'picture-in-picture') {
-          toast(`${PIP_FAILED} [${steps.join(' · ') || 'geen reactie'}; ${document.visibilityState}]`);
-        }
-      }, 3000);
+      toast(PIP_FAILED);
     }
     return;
   }
   if (document.pictureInPictureElement) {
     document.exitPictureInPicture().catch(() => {});
   } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
-    video.requestPictureInPicture().catch(() => toast('Beeld-in-beeld lukt niet in deze browser.'));
+    video.requestPictureInPicture().catch(() => toast(PIP_FAILED));
   } else if (video.webkitSetPresentationMode) {
     video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
   }

@@ -675,7 +675,7 @@ html, body { overflow-x: hidden; }
 .pc-row { display: flex; align-items: center; gap: 2px; }
 .pc-btn { min-width: 38px; height: 38px; padding: 0 6px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 3px;
   color: #fff; font-size: 12px; font-weight: 700; }
-.pc-btn:hover { background: rgba(255, 255, 255, .14); }
+@media (hover: hover) { .pc-btn:hover { background: rgba(255, 255, 255, .14); } }
 .pc-btn .icon { width: 20px; height: 20px; }
 .pc-btn[hidden] { display: none; }
 .pc-btn.pc-cc { font-size: 13px; letter-spacing: .04em; }
@@ -760,3 +760,11 @@ html, body { overflow-x: hidden; }
    ondertitels weg. Daarom ligt de video precies over het vak heen. */
 .video-wrap { overflow: hidden; min-height: 0; }
 .video-wrap > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+
+/* Compacte speler: knoppen rechtsboven op een donker plaatje, met schaduw, leesbaar op een licht beeld */
+.pc-tools { display: flex; align-items: center; gap: 0; padding: 0 2px; border-radius: 999px;
+  background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.pc-tools:empty { display: none; }
+.pc-tools .pc-btn { height: 34px; min-width: 36px; }
+.pc.compact .pc-btn .icon, .pc.compact .pc-time { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); }
+.pc.compact .pc-mid { -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); background: rgba(0, 0, 0, .4); }
