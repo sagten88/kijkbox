@@ -37,6 +37,7 @@ const ICONS = {
   next: '<path d="M5 5v14l10-7z"/><path d="M19 5v14"/>',
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   shrink: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
+  airplay: '<path d="M6 17H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-2"/><path d="m12 15 5 6H7z"/>',
   pip: '<rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>',
   volume: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
   mute: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="m17 9 5 6M22 9l-5 6"/>',
@@ -589,6 +590,8 @@ video.setAttribute('playsinline', '');
 // Een doorzichtige afbeelding, anders toont Android tijdens het laden een grote grijze afspeelknop.
 video.poster = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 video.setAttribute('webkit-playsinline', '');
+// AirPlay mag (de knop staat in de eigen bediening, zie pcAirplay).
+video.setAttribute('x-webkit-airplay', 'allow');
 const videoMsg = h('div', { class: 'video-msg' });
 const nowTitle = h('div', { class: 'title ellipsis' });
 const nowSub = h('div', { class: 'muted small ellipsis' });
@@ -652,6 +655,14 @@ pcVol.addEventListener('input', () => {
 for (const event of ['click', 'pointerdown', 'touchstart']) pcVol.addEventListener(event, (e) => e.stopPropagation(), { passive: true });
 const pcVolume = h('span', { class: 'pc-volume' }, pcMute, pcVol);
 const pcPip = pcBtn('Beeld-in-beeld', () => togglePip(), icon('pip'));
+// AirPlay (iPhone, iPad en Safari op de Mac): alleen zichtbaar als er een Apple TV of AirPlay-speaker is gevonden.
+const pcAirplay = pcBtn('AirPlay', () => video.webkitShowPlaybackTargetPicker?.(), icon('airplay'));
+pcAirplay.hidden = true;
+if (window.WebKitPlaybackTargetAvailabilityEvent) {
+  video.addEventListener('webkitplaybacktargetavailabilitychanged', (event) => {
+    pcAirplay.hidden = event.availability !== 'available';
+  });
+}
 const pcFull = pcBtn('Volledig scherm', () => toggleFull(), icon('expand'));
 const pcLive = h('span', { class: 'pc-live' }, 'LIVE');
 const pcRipple = h('div', { class: 'pc-ripple' });
@@ -662,7 +673,7 @@ const pc = h('div', { class: 'pc' },
   h('div', { class: 'pc-bottom' },
     h('div', { class: 'pc-line' }, pcTime, h('div', { class: 'pc-scrub-wrap' }, h('div', { class: 'pc-avail' }, pcAvail), pcScrub), pcTotal, pcLive),
     h('div', { class: 'pc-row' }, pcPlay, pcSeekBtn(-30), pcSeekBtn(-10), pcSeekBtn(10), pcSeekBtn(30),
-      h('span', { class: 'grow' }), pcNext, pcCc, pcVolume, pcPip, pcFull)),
+      h('span', { class: 'grow' }), pcNext, pcCc, pcVolume, pcAirplay, pcPip, pcFull)),
   pcNextCard);
 const tvHint = h('div', { class: 'tv-hint' });
 const stage = h('section', { class: 'stage', 'aria-label': 'Speler' },
@@ -1166,11 +1177,25 @@ function toggleFull() {
 document.addEventListener('fullscreenchange', () => updatePlayerUi());
 
 const pipSupported = Boolean(document.pictureInPictureEnabled) || typeof video.webkitSetPresentationMode === 'function';
+const PIP_FAILED = 'Beeld-in-beeld lukt hier niet. Open Kijkbox in Safari in plaats van via het beginscherm en probeer het opnieuw.';
 function togglePip() {
+  // iPhone en iPad: de eigen manier van Apple werkt daar het betrouwbaarst.
+  if (isAppleTouch() && typeof video.webkitSetPresentationMode === 'function') {
+    const inPip = video.webkitPresentationMode === 'picture-in-picture';
+    if (!inPip && video.webkitSupportsPresentationMode && !video.webkitSupportsPresentationMode('picture-in-picture')) return toast(PIP_FAILED);
+    try {
+      video.webkitSetPresentationMode(inPip ? 'inline' : 'picture-in-picture');
+    } catch {
+      return toast(PIP_FAILED);
+    }
+    // Weigert iOS het zonder foutmelding, dan dat alsnog laten weten.
+    if (!inPip) setTimeout(() => { if (video.webkitPresentationMode !== 'picture-in-picture') toast(PIP_FAILED); }, 1500);
+    return;
+  }
   if (document.pictureInPictureElement) {
     document.exitPictureInPicture().catch(() => {});
   } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
-    video.requestPictureInPicture().catch(() => {});
+    video.requestPictureInPicture().catch(() => toast('Beeld-in-beeld lukt niet in deze browser.'));
   } else if (video.webkitSetPresentationMode) {
     video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
   }
