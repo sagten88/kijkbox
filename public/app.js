@@ -84,7 +84,7 @@ function toast(message) {
   document.querySelector('.toast')?.remove();
   const el = h('div', { class: 'toast', role: 'status' }, message);
   document.body.append(el);
-  setTimeout(() => el.remove(), 3500);
+  setTimeout(() => el.remove(), Math.max(3500, message.length * 60));
 }
 
 const time = (ms) => new Date(ms).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
@@ -667,14 +667,46 @@ const pcFull = pcBtn('Volledig scherm', () => toggleFull(), icon('expand'));
 const pcLive = h('span', { class: 'pc-live' }, 'LIVE');
 const pcRipple = h('div', { class: 'pc-ripple' });
 const pcNextCard = h('div', { class: 'pc-next-card', hidden: true });
+// In het midden: grote afspeel-/pauzeknop, in de compacte weergave met 10 seconden terug/vooruit ernaast.
+const pcMidBack = pcSeekBtn(-10);
+const pcMidFwd = pcSeekBtn(10);
+pcMidBack.classList.add('pc-mid');
+pcMidFwd.classList.add('pc-mid');
+const pcCenter = h('div', { class: 'pc-center' }, pcMidBack, pcBig, pcMidFwd);
+const pcTop = h('div', { class: 'pc-top' });
+const pcLine = h('div', { class: 'pc-line' }, pcTime, h('div', { class: 'pc-scrub-wrap' }, h('div', { class: 'pc-avail' }, pcAvail), pcScrub), pcTotal, pcLive);
+const pcRow = h('div', { class: 'pc-row' });
+const pcRowSeek = [pcSeekBtn(-30), pcSeekBtn(-10), pcSeekBtn(10), pcSeekBtn(30)];
 const pc = h('div', { class: 'pc' },
   pcRipple,
-  pcBig,
-  h('div', { class: 'pc-bottom' },
-    h('div', { class: 'pc-line' }, pcTime, h('div', { class: 'pc-scrub-wrap' }, h('div', { class: 'pc-avail' }, pcAvail), pcScrub), pcTotal, pcLive),
-    h('div', { class: 'pc-row' }, pcPlay, pcSeekBtn(-30), pcSeekBtn(-10), pcSeekBtn(10), pcSeekBtn(30),
-      h('span', { class: 'grow' }), pcNext, pcCc, pcVolume, pcAirplay, pcPip, pcFull)),
+  pcTop,
+  pcCenter,
+  h('div', { class: 'pc-bottom' }, pcLine, pcRow),
   pcNextCard);
+
+// Smalle speler (telefoon rechtop, of de smalle kolom op een laptop): rustiger indeling.
+// Boven: volgende aflevering links, ondertitels/AirPlay/beeld-in-beeld rechts. Midden: −10, afspelen, +10.
+// Onder alleen de tijdbalk met volledig scherm. Breed: alles in één balk onderin zoals voorheen.
+let pcCompact = null;
+function layoutPc() {
+  const compact = pc.getBoundingClientRect().width < 560;
+  if (compact === pcCompact) return;
+  pcCompact = compact;
+  pc.classList.toggle('compact', compact);
+  if (compact) {
+    // Volume (alleen met een muis zichtbaar) staat dan bovenin, bij de andere knoppen.
+    pcTop.replaceChildren(pcNext, h('span', { class: 'grow' }), pcVolume, pcCc, pcAirplay, pcPip);
+    pcLine.append(pcFull);
+    pcRow.replaceChildren();
+  } else {
+    pcTop.replaceChildren();
+    pcRow.replaceChildren(pcPlay, ...pcRowSeek, h('span', { class: 'grow' }), pcNext, pcCc, pcVolume, pcAirplay, pcPip, pcFull);
+  }
+}
+if (!TV) {
+  layoutPc();
+  new ResizeObserver(() => layoutPc()).observe(pc);
+}
 const tvHint = h('div', { class: 'tv-hint' });
 const stage = h('section', { class: 'stage', 'aria-label': 'Speler' },
   h('div', { class: 'video-wrap' }, video, TV ? null : pc, videoMsg,
@@ -1188,8 +1220,27 @@ function togglePip() {
     } catch {
       return toast(PIP_FAILED);
     }
-    // Weigert iOS het zonder foutmelding, dan dat alsnog laten weten.
-    if (!inPip) setTimeout(() => { if (video.webkitPresentationMode !== 'picture-in-picture') toast(PIP_FAILED); }, 1500);
+    // Weigert iOS het zonder foutmelding, dan dat alsnog laten weten. Tijdelijk met wat er gebeurde
+    // (welke standen, na hoeveel tijd), zodat we op een echte iPhone kunnen zien waar het misgaat.
+    if (!inPip) {
+      const began = Date.now();
+      const steps = [];
+      const note = (what) => steps.push(`${what} ${((Date.now() - began) / 1000).toFixed(1)}s`);
+      const onMode = () => note(video.webkitPresentationMode);
+      const onPause = () => note('pauze');
+      const onError = () => note(`fout ${video.error?.code ?? ''}`);
+      video.addEventListener('webkitpresentationmodechanged', onMode);
+      video.addEventListener('pause', onPause);
+      video.addEventListener('error', onError);
+      setTimeout(() => {
+        video.removeEventListener('webkitpresentationmodechanged', onMode);
+        video.removeEventListener('pause', onPause);
+        video.removeEventListener('error', onError);
+        if (video.webkitPresentationMode !== 'picture-in-picture') {
+          toast(`${PIP_FAILED} [${steps.join(' · ') || 'geen reactie'}; ${document.visibilityState}]`);
+        }
+      }, 3000);
+    }
     return;
   }
   if (document.pictureInPictureElement) {

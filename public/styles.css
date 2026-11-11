@@ -644,8 +644,10 @@ html, body { overflow-x: hidden; }
   background: linear-gradient(transparent 55%, rgba(0, 0, 0, .7)); color: #fff; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 .pc.show, .pc.paused { opacity: 1; }
 .pc:not(.show):not(.paused) { cursor: none; }
-.pc:not(.show):not(.paused) .pc-bottom, .pc:not(.show):not(.paused) .pc-big { pointer-events: none; }
-.pc-big { position: absolute; left: 50%; top: 45%; width: 68px; height: 68px; margin: -34px 0 0 -34px; border-radius: 50%; display: none; place-items: center;
+.pc:not(.show):not(.paused) .pc-bottom, .pc:not(.show):not(.paused) .pc-center > *, .pc:not(.show):not(.paused) .pc-top { pointer-events: none; }
+.pc-center { position: absolute; left: 0; right: 0; top: 45%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; gap: 28px; pointer-events: none; }
+.pc-center > * { pointer-events: auto; }
+.pc-big { width: 68px; height: 68px; border-radius: 50%; display: none; place-items: center;
   background: rgba(0, 0, 0, .55); border: 2px solid rgba(255, 255, 255, .85); color: #fff; }
 .pc.paused .pc-big { display: grid; }
 /* Film of serie: de grote afspeel-/pauzeknop staat in het midden zolang de knoppen in beeld zijn. */
@@ -717,7 +719,27 @@ html, body { overflow-x: hidden; }
 .stage:fullscreen .now-bar, .stage:fullscreen .stage-info { display: none; }
 .stage.pseudo-fs .close-video, .stage:fullscreen .close-video { display: grid; }
 .stage:fullscreen .video-wrap { flex: 1; aspect-ratio: auto; max-height: none; }
-.pc.counting .pc-big { display: none; }
+.pc.counting .pc-big, .pc.counting .pc-mid { display: none; }
+
+/* ---- Compacte speler (telefoon rechtop): knoppen verdeeld over boven, midden en onder */
+.pc-mid { display: none; }
+.pc-top { display: none; }
+.pc.compact { background: linear-gradient(rgba(0, 0, 0, .5), transparent 28%, transparent 60%, rgba(0, 0, 0, .7)); }
+.pc.compact .pc-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 2px; padding: calc(4px + var(--safe-t)) 6px 0 8px; }
+.stage.pseudo-fs .pc.compact .pc-top, .stage:fullscreen .pc.compact .pc-top { padding-right: 56px; }
+.pc.compact .pc-center { top: 50%; gap: 22px; }
+.pc.compact .pc-big { width: 58px; height: 58px; }
+.pc.compact .pc-big .icon { width: 26px; height: 26px; }
+.pc.compact:not(.live) .pc-mid { display: inline-flex; width: 46px; height: 46px; border-radius: 50%; background: rgba(0, 0, 0, .35); }
+.pc.compact.live.show .pc-big { display: grid; }
+.pc.compact .pc-row { display: none; }
+.pc.compact .pc-line { gap: 6px; }
+.pc.compact .pc-line .pc-btn { min-width: 34px; }
+.pc.compact .pc-next { height: 30px; padding: 0 10px; font-size: 12px; }
+.pc.compact .pc-next .pc-label { display: inline; }
+.pc.compact.live .pc-line > .pc-btn { margin-left: auto; }
+/* Ondertitels staan al in de speler; niet nog eens in de balk eronder. */
+@media (max-width: 699px) { .now-bar .cc-btn { display: none; } }
 /* Het kruisje verdwijnt samen met de knoppen tijdens het afspelen; één tik haalt alles terug. */
 .close-video { transition: opacity .2s; }
 .pc:not(.show):not(.paused) ~ .close-video { opacity: 0; pointer-events: none; }
