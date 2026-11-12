@@ -1129,11 +1129,35 @@ video.addEventListener('ended', () => {
   const { item } = player;
   if (item?.type === 'live') restartLive();
   else if (item) {
+    if (endedTooSoon(item)) return;
     api('POST', `/api/progress/${item.id}`, { finished: true }).catch(() => {});
     // Serie: na een korte aftelling vanzelf door naar de volgende aflevering.
     if (tvNext) startNextCountdown();
   }
 });
+
+// Sommige providers breken de verbinding halverwege af. De server denkt dan dat de film of
+// aflevering klaar is en de speler komt veel te vroeg bij "het einde". Weten we hoe lang hij echt
+// duurt, dan is dat geen einde: verder laden vanaf waar je was. Komt hij daarna een paar keer
+// achter elkaar niet verder, dan een melding in plaats van eindeloos opnieuw proberen.
+let cutOff = { id: null, pos: -1, strikes: 0 };
+function endedTooSoon(item) {
+  const pos = playerPos();
+  // Het laatste stukje (aftiteling) telt wel als einde: tot een minuut, bij korte video's minder.
+  if (!player.duration || pos >= player.duration - Math.min(60, Math.max(5, player.duration * 0.05))) return false;
+  const stuck = cutOff.id === item.id && pos - cutOff.pos < 5;
+  cutOff = { id: item.id, pos, strikes: stuck ? cutOff.strikes + 1 : 0 };
+  console.warn(`Stream hield op bij ${Math.round(pos)} van ${Math.round(player.duration)} s, opnieuw laden`);
+  const mode = player.mode === 'transcode' ? 'transcode' : player.mode === 'direct' ? 'auto' : 'remux';
+  if (cutOff.strikes >= 3) {
+    cutOff = { id: null, pos: -1, strikes: 0 };
+    teardownEngine();
+    showMessage('De stream stopt steeds voortijdig. Je provider breekt de verbinding af.', () => start(item, { mode, resume: pos }));
+    return true;
+  }
+  start(item, { mode, resume: pos });
+  return true;
+}
 
 // ---- Tijd en spoelen (eigen speler en tv)
 // Bij een stream die de server omzet, begint de video bij `player.base` seconden. De echte lengte
