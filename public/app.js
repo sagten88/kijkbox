@@ -973,9 +973,11 @@ function attach(info, seq) {
       console.warn('Afspeelfout', data.type, data.details, data.response?.code ?? '', data.error?.message ?? '');
       player.lastError = data.details;
       player.lastReason = data.reason || data.error?.message || '';
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && data.response?.code === 404 && player.started && player.item?.type !== 'live') {
-        // De server heeft de film of aflevering opgeruimd (bijv. lang op pauze). Verder laden vanaf hier.
-        reloadHere('verlopen');
+      if (player.started && player.item?.type !== 'live'
+        && (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.details === 'levelParsingError')) {
+        // Film of aflevering speelde al: de server ruimde hem op (lang op pauze) of het omzetten
+        // brak af omdat de provider de verbinding verbrak. Verder laden vanaf hier.
+        recoverHere(`${data.details} ${data.response?.code ?? ''}`.trim());
       } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !player.mediaRetry) {
         player.mediaRetry = true;
         hls.recoverMediaError();
@@ -1184,18 +1186,29 @@ function endedTooSoon(item) {
   const pos = playerPos();
   // Het laatste stukje (aftiteling) telt wel als einde: tot een minuut, bij korte video's minder.
   if (!player.duration || pos >= player.duration - Math.min(60, Math.max(5, player.duration * 0.05))) return false;
+  recoverHere(`gestopt bij ${Math.round(pos)} van ${Math.round(player.duration)} s`);
+  return true;
+}
+
+/**
+ * Film of aflevering hapert onderweg (provider brak af, server ruimde op): verder laden vanaf hier.
+ * Komt hij drie keer achter elkaar niet verder, dan een melding in plaats van eindeloos proberen.
+ */
+function recoverHere(reason) {
+  const { item } = player;
+  if (!item || item.type === 'live') return;
+  const pos = playerPos();
   const stuck = cutOff.id === item.id && pos - cutOff.pos < 5;
   cutOff = { id: item.id, pos, strikes: stuck ? cutOff.strikes + 1 : 0 };
-  console.warn(`Stream hield op bij ${Math.round(pos)} van ${Math.round(player.duration)} s, opnieuw laden`);
+  console.warn(`Opnieuw laden vanaf hier (${reason})`);
   const mode = player.mode === 'transcode' ? 'transcode' : player.mode === 'direct' ? 'auto' : 'remux';
   if (cutOff.strikes >= 3) {
     cutOff = { id: null, pos: -1, strikes: 0 };
     teardownEngine();
-    showMessage('De stream stopt steeds voortijdig. Je provider breekt de verbinding af.', () => start(item, { mode, resume: pos }));
-    return true;
+    showMessage('Dit blijft haperen. Kijkt er op een ander apparaat nog iemand? Je provider staat maar één verbinding toe.', () => start(item, { mode, resume: pos }));
+    return;
   }
   start(item, { mode, resume: pos });
-  return true;
 }
 
 // ---- Tijd en spoelen (eigen speler en tv)
