@@ -2680,8 +2680,9 @@ function usersPanel() {
   const list = h('div', {});
   const notice = h('div', {});
 
-  /** Het tijdelijke wachtwoord één keer laten zien, om door te geven. */
+  /** Het tijdelijke wachtwoord één keer laten zien, om door te geven: in een venster midden in beeld. */
   function showTemp(username, password) {
+    notice.replaceChildren();
     const code = h('code', {}, password);
     const copy = h('button', {
       class: 'btn compact', type: 'button',
@@ -2695,13 +2696,30 @@ function usersPanel() {
         toast(document.execCommand('copy') ? 'Gekopieerd.' : 'Geselecteerd: kopieer het met Ctrl+C.');
       },
     }, 'Kopiëren');
-    notice.replaceChildren(h('div', { class: 'temp-password' },
-      h('div', { class: 'grow' },
-        h('div', {}, `Tijdelijk wachtwoord voor ${username}:`),
-        code,
-        h('div', { class: 'muted small' }, 'Geef dit door. Bij de eerste keer inloggen kiest de gebruiker zelf een nieuw wachtwoord. Je ziet het hier maar één keer.')),
-      copy,
-      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Sluiten', onclick: () => notice.replaceChildren() }, icon('close'))));
+    const done = h('button', { class: 'btn primary', type: 'button', onclick: () => overlay.remove() }, 'Klaar');
+    const overlay = h('div', { class: 'modal-backdrop' },
+      h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'temp-title' },
+        h('h2', { id: 'temp-title' }, `Nieuw wachtwoord voor ${username}`),
+        h('div', { class: 'temp-password' }, code),
+        h('p', { class: 'muted small' }, 'Geef dit door. Bij de eerste keer inloggen kiest de gebruiker zelf een nieuw wachtwoord. Je ziet het hier maar één keer.'),
+        h('div', { class: 'modal-actions' }, copy, done)));
+    document.body.append(overlay);
+    done.focus();
+  }
+
+  /** Vraagt in een venster of het wachtwoord opnieuw mag (confirm() werkt niet in elke app). */
+  function askReset(username) {
+    return new Promise((resolve) => {
+      const close = (value) => { overlay.remove(); resolve(value); };
+      const yes = h('button', { class: 'btn primary', type: 'button', onclick: () => close(true) }, 'Nieuw wachtwoord maken');
+      const overlay = h('div', { class: 'modal-backdrop', onclick: (e) => { if (e.target === overlay) close(false); } },
+        h('div', { class: 'modal', role: 'alertdialog', 'aria-modal': 'true', 'aria-labelledby': 'reset-title' },
+          h('h2', { id: 'reset-title' }, `Wachtwoord van ${username} opnieuw instellen?`),
+          h('p', { class: 'muted' }, `Kijkbox maakt een nieuw tijdelijk wachtwoord. Het oude werkt dan niet meer en ${username} wordt overal uitgelogd.`),
+          h('div', { class: 'modal-actions' }, h('button', { class: 'btn', type: 'button', onclick: () => close(false) }, 'Annuleren'), yes)));
+      document.body.append(overlay);
+      yes.focus();
+    });
   }
 
   async function refresh() {
@@ -2726,7 +2744,7 @@ function usersPanel() {
       user.id !== state.user.id && h('button', {
         class: 'btn compact',
         onclick: async () => {
-          if (!confirm(`Nieuw tijdelijk wachtwoord voor ${user.username}? Het oude werkt dan niet meer en ${user.username} wordt overal uitgelogd.`)) return;
+          if (!(await askReset(user.username))) return;
           try {
             const { tempPassword } = await api('PATCH', `/api/users/${user.id}`, { resetPassword: true });
             showTemp(user.username, tempPassword);
@@ -2735,7 +2753,7 @@ function usersPanel() {
             toast(err.message);
           }
         },
-      }, 'Wachtwoord vergeten'),
+      }, 'Nieuw wachtwoord'),
       user.id !== state.user.id && h('button', {
         class: 'icon-btn', 'aria-label': `${user.username} verwijderen`,
         onclick: async () => {

@@ -114,11 +114,18 @@ function parseLook(value) {
 // Profielfoto's: a1 t/m a12 (getekend in de browser), of leeg voor de eerste letter.
 const AVATARS = new Set(['', ...Array.from({ length: 12 }, (_, i) => `a${i + 1}`)]);
 
-/** Tijdelijk wachtwoord dat makkelijk over te nemen is: geen 0/o, 1/l/i. */
+// Tijdelijk wachtwoord dat makkelijk over te nemen is: twee gewone woorden en een getal, zoals
+// "boomkaas42". Het geldt maar één keer: bij het inloggen kiest de gebruiker meteen een eigen.
+const TEMP_WORDS = ['appel', 'bloem', 'boom', 'boot', 'brood', 'deur', 'duin', 'eend', 'fiets', 'geit', 'gras', 'haas',
+  'hond', 'huis', 'jas', 'kaas', 'kat', 'koe', 'kers', 'lamp', 'maan', 'meer', 'melk', 'mos', 'muis', 'peer', 'pen',
+  'raam', 'regen', 'roos', 'schip', 'sneeuw', 'soep', 'ster', 'stoel', 'strand', 'tafel', 'taart', 'tent', 'thee',
+  'trein', 'tulp', 'uil', 'vis', 'vogel', 'vos', 'wolk', 'zand', 'zee', 'zon'];
 function tempPassword() {
-  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-  const pick = (n) => Array.from({ length: n }, () => chars[crypto.randomInt(chars.length)]).join('');
-  return `${pick(4)}-${pick(4)}-${pick(4)}`;
+  const word = () => TEMP_WORDS[crypto.randomInt(TEMP_WORDS.length)];
+  let first = word();
+  let second = word();
+  while (second === first) second = word();
+  return `${first}${second}${crypto.randomInt(10, 100)}`;
 }
 const APPEARANCES = new Set(['', 'light', 'oled']);
 

@@ -768,3 +768,7 @@ html, body { overflow-x: hidden; }
 .pc-tools .pc-btn { height: 34px; min-width: 36px; }
 .pc.compact .pc-btn .icon, .pc.compact .pc-time { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); }
 .pc.compact .pc-mid { -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); background: rgba(0, 0, 0, .4); }
+
+/* Tijdelijk wachtwoord in het venster: groot en makkelijk over te nemen */
+.modal .temp-password { justify-content: center; margin: 0; }
+.modal .temp-password code { font-size: 26px; }
