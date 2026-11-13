@@ -973,7 +973,10 @@ function attach(info, seq) {
       console.warn('Afspeelfout', data.type, data.details, data.response?.code ?? '', data.error?.message ?? '');
       player.lastError = data.details;
       player.lastReason = data.reason || data.error?.message || '';
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !player.mediaRetry) {
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && data.response?.code === 404 && player.started && player.item?.type !== 'live') {
+        // De server heeft de film of aflevering opgeruimd (bijv. lang op pauze). Verder laden vanaf hier.
+        reloadHere('verlopen');
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !player.mediaRetry) {
         player.mediaRetry = true;
         hls.recoverMediaError();
       } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && player.started && player.netRetries < 3) {
@@ -1018,6 +1021,7 @@ async function start(item, { mode = 'auto', resume = 0 } = {}) {
   player.requested = mode;
   player.started = false;
   player.resume = resume;
+  player.pausedAt = 0;
   teardownEngine();
   stage.classList.add('active');
   fillScreen();
@@ -1124,7 +1128,42 @@ for (const name of ['play', 'pause']) {
     if (TV && stage.classList.contains('show-bar')) tvShowBar(tvInControls() ? document.activeElement : undefined);
   });
 }
-video.addEventListener('pause', () => saveProgress(true));
+video.addEventListener('pause', () => {
+  saveProgress(true);
+  if (player.started) player.pausedAt = Date.now();
+});
+
+/** Laadt de film of aflevering opnieuw vanaf waar je nu bent, op dezelfde manier. */
+function reloadHere(reason) {
+  const { item } = player;
+  if (!item || item.type === 'live') return;
+  console.warn(`Opnieuw laden vanaf hier (${reason})`);
+  const mode = player.mode === 'transcode' ? 'transcode' : player.mode === 'direct' ? 'auto' : 'remux';
+  start(item, { mode, resume: playerPos() });
+}
+
+// De server ruimt een film of aflevering op als er 5 minuten niet naar gekeken wordt (zodat de
+// provider-verbinding vrijkomt). Stond hij langer op pauze, dan meteen opnieuw laden vanaf hier,
+// in plaats van na de paar seconden die nog klaarstonden stil te vallen.
+const LONG_PAUSE = 4 * 60 * 1000;
+video.addEventListener('play', () => {
+  const pausedFor = player.pausedAt ? Date.now() - player.pausedAt : 0;
+  player.pausedAt = 0;
+  if (pausedFor > LONG_PAUSE && player.started && player.item?.type !== 'live') reloadHere('lange pauze');
+});
+
+// Wel geluid maar geen beeld (het toestel kan het beeld niet afspelen): dan omzetten, net als bij een beeldfout.
+video.addEventListener('playing', () => {
+  const seq = player.seq;
+  setTimeout(() => {
+    if (seq !== player.seq || video.paused || player.item?.type === 'live' || player.mode === 'transcode') return;
+    if (video.readyState >= 2 && video.videoWidth === 0) {
+      console.warn('Geen beeld, alleen geluid: omzetten');
+      player.lastError = 'bufferIncompatibleCodecsError';
+      playbackFailed(seq);
+    }
+  }, 4000);
+});
 video.addEventListener('ended', () => {
   const { item } = player;
   if (item?.type === 'live') restartLive();
@@ -1354,7 +1393,8 @@ pc.addEventListener('click', (event) => {
 pc.addEventListener('dblclick', (event) => {
   if (finePointer.matches && !event.target.closest('button, input')) toggleFull();
 });
-pc.addEventListener('mousemove', () => pcPoke());
+// Alleen een echte muis; een tik op een tablet geeft ook een "muisbeweging", en dan verdween de balk meteen weer.
+pc.addEventListener('pointermove', (event) => { if (event.pointerType === 'mouse') pcPoke(); });
 for (const name of ['play', 'pause', 'timeupdate', 'durationchange', 'progress', 'volumechange', 'loadedmetadata']) {
   video.addEventListener(name, () => updatePlayerUi());
 }
