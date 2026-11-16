@@ -47,7 +47,14 @@ body.tv .stage.show-bar .now-bar { opacity: 1; }
 body.tv .now-bar .title { font-size: 22px; }
 body.tv .now-bar .muted { font-size: 15px; }
 body.tv .tv-progress { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
-.tv-track { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+/* Tijdbalk: met pijltje omhoog te kiezen; dan verschijnt een markering met de tijd erboven. */
+.tv-scrub { position: relative; flex: 1; display: flex; align-items: center; height: 24px; border-radius: 12px; outline: none; }
+.tv-track { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .25); overflow: hidden; transition: height .15s; }
+body.tv .tv-scrub:focus .tv-track { height: 8px; border-radius: 4px; }
+.tv-mark, .tv-tip { position: absolute; display: none; transform: translateX(-50%); pointer-events: none; }
+.tv-mark { top: 50%; width: 18px; height: 18px; margin-top: -9px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px var(--accent); }
+.tv-tip { bottom: 26px; padding: 4px 10px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 15px; white-space: nowrap; }
+body.tv .tv-progress.scrubbing .tv-mark, body.tv .tv-progress.scrubbing .tv-tip { display: block; }
 .tv-track i { display: block; height: 100%; background: var(--accent); }
 body.tv .tv-controls { display: flex; justify-content: center; gap: 14px; margin-top: 14px; }
 .tv-btn {

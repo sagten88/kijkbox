@@ -603,7 +603,11 @@ const stageInfo = h('div', { class: 'stage-info' });
 const tvPos = h('span', { class: 'tv-pos' });
 const tvTotal = h('span', { class: 'tv-total' });
 const tvFill = h('i');
-const tvProgress = h('div', { class: 'tv-progress' }, tvPos, h('div', { class: 'tv-track' }, tvFill), tvTotal);
+// De tijdbalk is op de tv ook te kiezen (pijltje omhoog vanaf de knoppen): dan spoel je met links/rechts.
+const tvMark = h('span', { class: 'tv-mark' });
+const tvTip = h('span', { class: 'tv-tip' });
+const tvScrubEl = h('div', { class: 'tv-scrub', tabIndex: -1, 'aria-label': 'Tijdbalk' }, h('div', { class: 'tv-track' }, tvFill), tvMark, tvTip);
+const tvProgress = h('div', { class: 'tv-progress' }, tvPos, tvScrubEl, tvTotal);
 const tvBtn = (cls, label, onclick, ...kids) => h('button', { class: `tv-btn ${cls}`, 'aria-label': label, tabIndex: -1, onclick }, ...kids);
 const tvBack10 = tvBtn('', '10 seconden terug', () => tvSeek(-10), icon('replay'), h('span', {}, '10'));
 const tvPlay = tvBtn('tv-play', 'Pauze', () => tvTogglePlay());
@@ -3269,12 +3273,14 @@ function tvMove(direction) {
 
 let tvNext = null; // de volgende aflevering, als die er is
 let tvNextShown = false;
+let tvScrub = null; // spoelen via de tijdbalk: { pos, last, reps }
 
 const tvControlList = () => [tvBack30, tvBack10, tvPlay, tvFwd10, tvFwd30, tvCc, tvNextEp].filter((b) => !b.hidden);
 const tvBarOpen = () => stage.classList.contains('show-bar');
 const tvInControls = () => tvControls.contains(document.activeElement);
 
 function tvHideBar() {
+  tvScrub = null;
   stage.classList.remove('show-bar');
   if (stage.contains(document.activeElement)) document.activeElement.blur();
 }
@@ -3284,7 +3290,7 @@ function tvShowBar(focus) {
   stage.classList.add('show-bar');
   clearTimeout(tvBarTimer);
   tvUpdateTime();
-  if (!video.paused && !tvNextShown) tvBarTimer = setTimeout(tvHideBar, 5000);
+  if (!video.paused && !tvNextShown && !tvScrub) tvBarTimer = setTimeout(tvHideBar, 5000);
   if (player.item?.type === 'live') return;
   if (focus) focus.focus({ preventScroll: true });
   else if (!tvInControls()) tvPlay.focus({ preventScroll: true });
@@ -3358,6 +3364,13 @@ function tvUpdateTime() {
   tvPos.textContent = clock(position);
   tvTotal.textContent = total ? clock(total) : '…';
   tvFill.style.width = total ? `${Math.min(100, (position / total) * 100)}%` : '0%';
+  tvProgress.classList.toggle('scrubbing', Boolean(tvScrub));
+  if (tvScrub && total) {
+    const at = `${Math.min(100, (tvScrub.pos / total) * 100)}%`;
+    tvMark.style.left = at;
+    tvTip.style.left = at;
+    tvTip.textContent = clock(tvScrub.pos);
+  }
   tvPlay.replaceChildren(icon(video.paused ? 'play' : 'pause', video.paused));
   tvPlay.setAttribute('aria-label', video.paused ? 'Afspelen' : 'Pauze');
   tvNextEp.hidden = !tvNextShown;
@@ -3366,6 +3379,34 @@ function tvUpdateTime() {
 
 function tvSeek(seconds) {
   seekBy(seconds);
+}
+
+// ---- Spoelen via de tijdbalk (tv)
+// Pijltje omhoog vanaf de knoppen kiest de tijdbalk. Links/rechts schuift een markering (eerst per
+// 10 seconden, ingedrukt houden gaat steeds sneller), OK spoelt daarheen, omlaag of Terug breekt af.
+// Kan alleen als de lengte bekend is, net als de tijdbalk op de telefoon.
+const tvCanScrub = () => player.item && player.item.type !== 'live' && playerTotal() > 0;
+const tvScrubbing = () => Boolean(tvScrub) && document.activeElement === tvScrubEl;
+
+function tvScrubStart() {
+  tvScrub = { pos: playerPos(), last: 0, reps: 0 };
+  tvShowBar(tvScrubEl);
+}
+
+function tvScrubMove(direction) {
+  const now = Date.now();
+  tvScrub.reps = now - tvScrub.last < 450 ? tvScrub.reps + 1 : 0;
+  tvScrub.last = now;
+  const step = tvScrub.reps < 5 ? 10 : tvScrub.reps < 15 ? 30 : 60;
+  tvScrub.pos = Math.max(0, Math.min(playerTotal() - 2, tvScrub.pos + direction * step));
+  tvShowBar(tvScrubEl);
+}
+
+function tvScrubEnd(commit) {
+  const target = tvScrub?.pos;
+  tvScrub = null;
+  if (commit && Number.isFinite(target)) seekTo(target);
+  tvShowBar(tvPlay);
 }
 
 function tvClosePlayer() {
@@ -3387,10 +3428,20 @@ function tvPlayerKey(key) {
     const index = list.indexOf(document.activeElement);
     tvShowBar(list[Math.max(0, Math.min(list.length - 1, index + step))]);
   };
+  if (tvScrubbing()) {
+    if (key === 'ArrowLeft' || key === 'Rewind') tvScrubMove(-1);
+    else if (key === 'ArrowRight' || key === 'Forward') tvScrubMove(1);
+    else if (key === 'Enter' || key === ' ') tvScrubEnd(true);
+    else if (key === 'ArrowDown' || BACK_KEYS.has(key)) tvScrubEnd(false);
+    else if (key === 'ArrowUp') tvShowBar(tvScrubEl);
+    else return false;
+    return true;
+  }
   switch (key) {
     case 'ArrowUp': case 'ChannelUp':
       if (live) zap(-1);
-      tvShowBar();
+      if (!live && tvBarOpen() && tvInControls() && tvCanScrub()) tvScrubStart();
+      else tvShowBar();
       return true;
     case 'ArrowDown': case 'ChannelDown':
       if (live) zap(1);
@@ -3460,6 +3511,10 @@ function tvPlayerKey(key) {
 
 /** De Terug-knop. Geeft false als de app moet sluiten. */
 function tvBack() {
+  if (tvScrubbing()) {
+    tvScrubEnd(false);
+    return true;
+  }
   if (stage.classList.contains('active')) {
     tvClosePlayer();
     return true;

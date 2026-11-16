@@ -166,6 +166,9 @@ const LIVE_SEGMENT = 4;
 const LIVE_WINDOW = 40;
 export const LIVE_DELAY = 30;
 
+/** Film of aflevering halverwege, gekopieerd (niet omgezet), via hls.js: met de echte begintijd. */
+const exactStart = (session) => session.exact && !session.transcode && !session.live && session.start > 0;
+
 function ffmpegArgs(session) {
   const { item, url, live, transcode, start, dir } = session;
   const opts = requestOptions(item);
@@ -180,7 +183,15 @@ function ffmpegArgs(session) {
     // Komt er 15 seconden niets binnen, dan stopt ffmpeg en start de server hem opnieuw.
     if (live) args.push('-reconnect_streamed', '1', '-rw_timeout', '15000000');
     args.push('-fflags', '+genpts+discardcorrupt', '-protocol_whitelist', 'http,https,tcp,tls,crypto,hls');
-    if (start > 0) args.push('-ss', String(start));
+    if (start > 0) {
+      // Kopiëren (niet omzetten) kan alleen op een keyframe beginnen, en dat ligt niet precies op het
+      // gevraagde punt (via internet soms zelfs een paar seconden erna). Beeld en geluid beginnen hier
+      // daarom samen op dat keyframe, met de tijden van de bron: zo is na afloop te zien waar het
+      // beeld echt begint, en lopen de ondertitels gelijk (zie exactBase).
+      if (exactStart(session)) args.push('-noaccurate_seek');
+      args.push('-ss', String(start));
+      if (exactStart(session)) args.push('-copyts');
+    }
     args.push('-i', url);
   }
   args.push('-map', '0:v:0?', '-map', '0:a:0?');
@@ -195,7 +206,10 @@ function ffmpegArgs(session) {
   } else {
     args.push('-c:v', 'copy');
   }
-  args.push('-c:a', 'aac', '-ac', '2', '-b:a', '160k', '-f', 'hls');
+  args.push('-c:a', 'aac', '-ac', '2', '-b:a', '160k');
+  // Geen extra vertraging in de segmenten: dan is de eerste tijd in het eerste segment precies het begin.
+  if (exactStart(session)) args.push('-muxdelay', '0', '-muxpreload', '0');
+  args.push('-f', 'hls');
   if (live) {
     // omit_endlist: een live-stream eindigt nooit, ook niet als de bron even wegvalt.
     // append_list alleen na een herstart: dan gaat dezelfde afspeellijst verder. Bij de eerste start
@@ -337,6 +351,8 @@ function launch(session) {
     // waar hij heen kan spoelen, ook voorbij het stuk dat al is omgezet.
     const length = /Duration: (\d+):(\d\d):(\d\d(?:\.\d+)?)/.exec(head);
     if (length && !session.live) session.duration = Number(length[1]) * 3600 + Number(length[2]) * 60 + Number(length[3]);
+    const sourceStart = /Duration: [^\n]*?, start: (-?\d+(?:\.\d+)?)/.exec(head);
+    session.sourceStart = sourceStart ? Number(sourceStart[1]) : 0;
     const video =/Stream #0:\d+[^\n]*?: Video: (\w+)/.exec(head);
     let restart = false;
     // Alleen H.264 speelt overal af. HEVC en anderen worden dus automatisch omgezet.
@@ -438,9 +454,9 @@ async function waitUntilReady(session, cid) {
   throw new UpstreamError('De stream start niet. Probeer het opnieuw.');
 }
 
-async function startFfmpeg(item, { cid, transcode, live, start, native }) {
+async function startFfmpeg(item, { cid, transcode, live, start, native, exact = false }) {
   await assertHostAllowed(item.url);
-  const key = `${item.id}:${item.catchupKey ?? ''}:${transcode ? 't' : 'c'}:${start}`;
+  const key = `${item.id}:${item.catchupKey ?? ''}:${transcode ? 't' : 'c'}:${start}${exact ? ':x' : ''}`;
   let session = byKey.get(key);
   if (!session) {
     if (sessions.size >= config.maxFfmpeg) {
@@ -449,7 +465,7 @@ async function startFfmpeg(item, { cid, transcode, live, start, native }) {
     const id = crypto.randomBytes(16).toString('hex');
     const dir = path.join(config.tempDir, id);
     fs.mkdirSync(dir);
-    session = { id, key, dir, item, url: item.url, live, transcode, start, viewers: new Map(), startedAt: Date.now() };
+    session = { id, key, dir, item, url: item.url, live, transcode, start, exact, viewers: new Map(), startedAt: Date.now() };
     // Bij spoelen naar een nieuw punt start een nieuwe sessie vlak nadat de vorige is gesloten. De provider
     // houdt die verbinding soms nog even bezet: dan net als bij een herstart een paar keer opnieuw proberen.
     if (!live) session.restartedAt = Date.now();
@@ -466,10 +482,45 @@ async function startFfmpeg(item, { cid, transcode, live, start, native }) {
     releaseViewer(cid);
     throw err;
   }
+  const base = exactStart(session) ? await exactBase(session) : start;
   return {
-    kind: 'hls', url: `/s/t/${session.id}/${cid}/index.m3u8`, base: start, mode: session.transcode ? 'transcode' : 'remux',
+    kind: 'hls', url: `/s/t/${session.id}/${cid}/index.m3u8`, base, mode: session.transcode ? 'transcode' : 'remux',
     duration: session.duration && session.duration > start ? Math.round(session.duration) : undefined,
   };
+}
+
+/**
+ * Waar het beeld echt begint (seconden in de film): de eerste beeldtijd in het eerste segment,
+ * min de begintijd van de bron. Lukt dat niet, dan het gevraagde punt.
+ */
+async function exactBase(session) {
+  if (session.firstPts === undefined) {
+    try {
+      session.firstPts = firstVideoPts(await fs.promises.readFile(path.join(session.dir, 'seg00000.ts')));
+    } catch {
+      session.firstPts = null;
+    }
+  }
+  if (session.firstPts === null) return session.start;
+  return Math.max(0, session.firstPts - (session.sourceStart ?? 0));
+}
+
+/** Eerste PTS (in seconden) van een videostroom in een MPEG-TS-bestand, of null. */
+export function firstVideoPts(buf) {
+  for (let i = 0; i + 188 <= buf.length; i += 188) {
+    if (buf[i] !== 0x47 || !(buf[i + 1] & 0x40)) continue;
+    let p = i + 4;
+    const adaptation = (buf[i + 3] >> 4) & 0x3;
+    if (adaptation === 2) continue;
+    if (adaptation === 3) p += 1 + buf[p];
+    if (p + 14 > i + 188 || buf[p] !== 0 || buf[p + 1] !== 0 || buf[p + 2] !== 1) continue;
+    const streamId = buf[p + 3];
+    if (streamId < 0xe0 || streamId > 0xef || !(buf[p + 7] & 0x80)) continue;
+    const b = buf.subarray(p + 9, p + 14);
+    const pts = (b[0] & 0x0e) * 2 ** 29 + b[1] * 2 ** 22 + (b[2] & 0xfe) * 2 ** 14 + b[3] * 2 ** 7 + (b[4] >> 1);
+    return pts / 90000;
+  }
+  return null;
 }
 
 /** Apple's speler start stabieler als de afspeellijst al een paar segmenten bevat. */
@@ -525,7 +576,8 @@ export async function startPlayback(item, { mode, cid, start, native }) {
       if (found.isHls) return { kind: 'hls', url: `/s/m/${issue(found.url, item.id)}.m3u8`, base: 0, mode: 'direct' };
     }
   }
-  return startFfmpeg(item, { cid, live, start: offset, transcode: mode === 'transcode', native: native && live });
+  // Apple's ingebouwde speler gaat mogelijk anders om met de echte tijden; die houdt het oude gedrag.
+  return startFfmpeg(item, { cid, live, start: offset, transcode: mode === 'transcode', native: native && live, exact: !live && !native && offset > 0 });
 }
 
 export function withLiveStart(text) {
@@ -629,7 +681,10 @@ export async function serveSubtitleCues(req, res) {
   try {
     text = await fs.promises.readFile(path.join(session.dir, `sub${n}.vtt`), 'utf8');
   } catch { /* nog niet aangemaakt */ }
-  res.set('Cache-Control', 'no-store').json({ cues: parseCues(text), done: Boolean(session.finished) });
+  let cues = parseCues(text);
+  const shift = exactStart(session) && session.firstPts ? session.firstPts : 0;
+  if (shift) cues = cues.map((c) => ({ ...c, start: c.start - shift, end: c.end - shift })).filter((c) => c.end > 0);
+  res.set('Cache-Control', 'no-store').json({ cues, done: Boolean(session.finished) });
 }
 
 export function serveLogo(req, res) {

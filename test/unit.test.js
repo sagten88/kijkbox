@@ -8,7 +8,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'kijkbox-test-'));
 
 const { parseExtinf, parseM3U, classify, xtreamBase } = await import('../server/sources.js');
 const { parseXmltvDate, parseProgramme, decodeXml } = await import('../server/epg.js');
-const { rewriteManifest, withLiveStart, withDiscontinuitySequence, LIVE_DELAY } = await import('../server/stream.js');
+const { rewriteManifest, withLiveStart, withDiscontinuitySequence, LIVE_DELAY, firstVideoPts } = await import('../server/stream.js');
 
 test('live-afspeellijst: naadnummer blijft kloppen als de naad uit de lijst schuift', () => {
   // Precies wat ffmpeg schrijft: na een herstart een naad, die later bovenaan wegvalt.
@@ -464,4 +464,24 @@ test('ingebouwde ondertitels herkennen', async () => {
     { index: 3, lang: 'eng', codec: 'ass' },
     { index: 5, lang: 'und', codec: 'mov_text' },
   ]);
+});
+
+test('firstVideoPts leest de eerste beeldtijd uit een MPEG-TS-segment', () => {
+  // Eén TS-pakket met het begin van een video-PES (stream 0xE0) met PTS = 8,5 s.
+  const pts = Math.round(8.5 * 90000);
+  const pkt = Buffer.alloc(188, 0xff);
+  pkt.set([0x47, 0x41, 0x00, 0x10]);
+  pkt.set([0x00, 0x00, 0x01, 0xe0, 0x00, 0x00, 0x80, 0x80, 0x05], 4);
+  pkt.set([
+    0x21 | ((Math.floor(pts / 2 ** 30) & 0x07) << 1),
+    (Math.floor(pts / 2 ** 22)) & 0xff,
+    ((Math.floor(pts / 2 ** 15) & 0x7f) << 1) | 1,
+    (Math.floor(pts / 2 ** 7)) & 0xff,
+    ((pts & 0x7f) << 1) | 1,
+  ], 13);
+  // Een audiopakket ervoor wordt overgeslagen.
+  const audio = Buffer.from(pkt);
+  audio[7] = 0xc0;
+  assert.equal(firstVideoPts(Buffer.concat([audio, pkt])), 8.5);
+  assert.equal(firstVideoPts(Buffer.alloc(376)), null);
 });
