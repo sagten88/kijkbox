@@ -772,3 +772,16 @@ html, body { overflow-x: hidden; }
 /* Tijdelijk wachtwoord in het venster: groot en makkelijk over te nemen */
 .modal .temp-password { justify-content: center; margin: 0; }
 .modal .temp-password code { font-size: 26px; }
+
+/* ---- Downloaden: kaartje rechtsonder met de voortgang */
+.dl-card { position: fixed; right: 16px; bottom: calc(16px + var(--safe-b)); z-index: 60; width: min(340px, calc(100vw - 32px));
+  display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .45); }
+.dl-card[hidden] { display: none; }
+.dl-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dl-head > b { flex: 1; min-width: 0; }
+.dl-head > .icon { width: 18px; height: 18px; color: var(--accent); flex: none; }
+.dl-card .btn { justify-self: start; }
+@media (max-width: 699px) { .dl-card { bottom: calc(76px + var(--safe-b)); } }
+.row .row-dl { flex: none; margin-right: 4px; }
+.dl-card a.btn { text-decoration: none; }

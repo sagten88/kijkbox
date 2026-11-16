@@ -32,6 +32,7 @@ const ICONS = {
   refresh: '<path d="M20 11a8 8 0 0 0-14-5L3 9m0-5v5h5M4 13a8 8 0 0 0 14 5l3-3m0 5v-5h-5"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
+  download: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
   replay: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
   forward: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
   next: '<path d="M5 5v14l10-7z"/><path d="M19 5v14"/>',
@@ -2124,6 +2125,56 @@ async function posterView(container, type, { returning = false } = {}) {
   return entry.cleanup;
 }
 
+// ---- Downloaden voor offline kijken
+// De server zet de film of aflevering eerst om naar een mp4 (dat duurt een paar minuten); een kaartje
+// rechtsonder toont de voortgang. Daarna "Opslaan": de browser downloadt het bestand.
+const dlCard = h('div', { class: 'dl-card', role: 'status', hidden: true });
+let dlTimer = null;
+
+async function downloadItem(item) {
+  try {
+    showDownload(await api('POST', `/api/downloads/${item.id}`), item);
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+function showDownload(job, item) {
+  clearTimeout(dlTimer);
+  if (!dlCard.isConnected) document.body.append(dlCard);
+  dlCard.hidden = false;
+  const close = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Sluiten', onclick: () => { clearTimeout(dlTimer); dlCard.hidden = true; } }, icon('close'));
+  const title = h('b', { class: 'ellipsis' }, job.name);
+  let body;
+  if (job.state === 'ready') {
+    body = [
+      h('div', { class: 'muted small' }, `Klaar · ${job.size >= 1e9 ? `${(job.size / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(job.size / 1e6))} MB`}`),
+      h('a', { class: 'btn primary compact', href: `/api/downloads/${job.itemId}/file`, download: `${job.name}.mp4` }, icon('download'), 'Opslaan op dit apparaat'),
+      h('div', { class: 'muted small' }, 'Op de iPhone: opslaan in Bestanden, daarna offline te kijken. Staat een dag klaar.'),
+    ];
+  } else if (job.state === 'failed') {
+    body = [
+      h('div', { class: 'error small' }, job.error),
+      h('button', { class: 'btn compact', type: 'button', onclick: () => downloadItem(item) }, 'Opnieuw proberen'),
+    ];
+  } else {
+    const percent = Math.round((job.progress ?? 0) * 100);
+    body = [
+      h('div', { class: 'muted small' }, percent ? `Klaarzetten… ${percent}%` : 'Klaarzetten…'),
+      h('div', { class: 'meter' }, h('i', { style: `width:${percent}%` })),
+      h('div', { class: 'muted small' }, 'Je kunt intussen verder in Kijkbox.'),
+    ];
+    dlTimer = setTimeout(async () => {
+      try {
+        showDownload(await api('GET', `/api/downloads/${job.itemId}`), item);
+      } catch {
+        dlTimer = setTimeout(() => showDownload(job, item), 5000);
+      }
+    }, 2000);
+  }
+  dlCard.replaceChildren(h('div', { class: 'dl-head' }, icon('download'), title, close), ...body);
+}
+
 async function detailView(container, id) {
   const item = await api('GET', `/api/items/${id}`);
   if (item.type === 'live') {
@@ -2145,6 +2196,9 @@ async function detailView(container, id) {
     }
   }
   actions.append(star);
+  if ((item.type === 'movie' || item.type === 'episode') && state.downloads && !TV) {
+    actions.append(h('button', { class: 'btn', onclick: () => downloadItem(item) }, icon('download'), 'Downloaden'));
+  }
   // Staat dit (of een aflevering van deze serie) in "Verder kijken"? Dan kun je het hier weghalen.
   const tracked = item.type === 'series'
     ? item.episodes?.find((e) => e.position !== undefined)
@@ -2210,7 +2264,11 @@ async function detailView(container, id) {
             h('div', { class: 'logo-box' }, String(e.episode ?? '')),
             h('div', { class: 'grow' },
               h('div', { class: 'name ellipsis' }, e.name),
-              percent > 0 && h('div', { class: 'meter' }, h('i', { style: `width:${percent}%` })))));
+              percent > 0 && h('div', { class: 'meter' }, h('i', { style: `width:${percent}%` })))),
+          state.downloads && !TV && h('button', {
+            class: 'icon-btn row-dl', 'aria-label': `${e.name} downloaden`, title: 'Downloaden',
+            onclick: () => downloadItem(e),
+          }, icon('download')));
       }));
       markPlaying();
     };
@@ -2800,7 +2858,7 @@ const SETTINGS_TABS = [
   ['status', 'Status', true, () => [statusPanel()], () => !TV],
   ['bronnen', 'Bronnen', true, () => [sourcesPanel()]],
   ['gebruikers', 'Gebruikers', true, () => [usersPanel()]],
-  ['server', 'Server', true, () => [updatesPanel(), backupsPanel(), networkPanel(), subtitlesPanel()], () => !TV],
+  ['server', 'Server', true, () => [updatesPanel(), backupsPanel(), networkPanel(), subtitlesPanel(), downloadsPanel()], () => !TV],
 ];
 
 function settingsView(container, tab = '') {
@@ -3080,6 +3138,24 @@ function askWatching(watching, waiting = false) {
 }
 
 /** Beheerder: koppeling met OpenSubtitles. Sleutel en wachtwoord gaan nooit terug naar de browser. */
+/** Beheerder: mag er gedownload worden voor offline kijken? */
+function downloadsPanel() {
+  const box = h('input', { type: 'checkbox', checked: Boolean(state.downloads) });
+  box.addEventListener('change', async () => {
+    try {
+      const saved = await api('POST', '/api/download-settings', { enabled: box.checked });
+      state.downloads = saved.enabled;
+      toast(saved.enabled ? 'Downloaden staat aan.' : 'Downloaden staat uit.');
+    } catch (err) {
+      box.checked = !box.checked;
+      toast(err.message);
+    }
+  });
+  return h('section', { class: 'panel' }, h('h2', {}, 'Downloaden'),
+    h('label', { class: 'check' }, box, h('span', { class: 'grow' }, 'Films en afleveringen laten downloaden voor offline kijken')),
+    h('p', { class: 'muted small' }, 'De server maakt er eerst een mp4 van die op telefoons en laptops afspeelt. Eén tegelijk; tijdens het klaarzetten gebruikt de server de verbinding met je provider. Klaargezette bestanden worden na een dag opgeruimd.'));
+}
+
 function subtitlesPanel() {
   const status = h('p', { class: 'muted small' }, 'Laden…');
   const form = h('form', {
@@ -3615,7 +3691,7 @@ function renderApp() {
   // Na inloggen weten we nog niet of ondertitels zijn ingesteld; dat staat in /api/state.
   if (state.user && state.subtitles === undefined) {
     state.subtitles = false;
-    fetch('/api/state').then((r) => r.json()).then((s) => { state.subtitles = Boolean(s.subtitles); updateCcButtons(); }).catch(() => {});
+    fetch('/api/state').then((r) => r.json()).then((s) => { state.subtitles = Boolean(s.subtitles); state.downloads = Boolean(s.downloads); updateCcButtons(); }).catch(() => {});
   }
   if (state.needsSetup) return app.replaceChildren(setupScreen());
   if (!state.user) return app.replaceChildren(TV ? (state.profiles ? profileScreen() : pairScreen()) : loginScreen());
@@ -3639,6 +3715,7 @@ const initial = await fetch(TV ? '/api/state?tv=1' : '/api/state').then((r) => r
 state.profiles = initial.profiles ?? 0;
 state.user = initial.user;
 state.subtitles = initial.user ? Boolean(initial.subtitles) : undefined;
+state.downloads = Boolean(initial.downloads);
 state.needsSetup = initial.needsSetup;
 renderApp();
 

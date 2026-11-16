@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,11 +20,15 @@ function findFfmpeg() {
   return 'ffmpeg';
 }
 
+const dataDir = path.resolve(process.env.DATA_DIR || path.join(rootDir, 'data'));
+
 export const config = {
   port: Number(process.env.PORT || 3000),
   host: process.env.HOST || '0.0.0.0',
-  dataDir: path.resolve(process.env.DATA_DIR || path.join(rootDir, 'data')),
-  tempDir: path.join(os.tmpdir(), 'kijkbox'),
+  dataDir,
+  // Omgezette films en afleveringen (en downloads) staan hier tijdelijk. Niet in /tmp: dat is op veel
+  // servers een klein stukje werkgeheugen (bijv. 2 GB), en een aflevering van 2,5 GB past daar niet in.
+  tempDir: process.env.TEMP_DIR ? path.resolve(process.env.TEMP_DIR) : path.join(dataDir, 'tmp'),
   // Zet TRUST_PROXY=1 als de site achter een reverse proxy zoals Caddy staat.
   trustProxy: process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY : false,
   secureCookies: bool('SECURE_COOKIES'),

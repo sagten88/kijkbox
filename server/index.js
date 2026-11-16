@@ -26,6 +26,7 @@ import {
   releaseViewer, serveBackdrop, serveFfmpegFile, serveLogo, serveSubtitleCues, serveSubtitleList, serveManifest, playbackStatus, servePassthrough, startPlayback, stopAllSessions,
 } from './stream.js';
 import { parseMediaUrl, UpstreamError } from './upstream.js';
+import { downloadSettings, downloadStatus, saveDownloadSettings, serveDownload, startDownload, stopDownloads } from './downloads.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -139,7 +140,7 @@ app.get('/api/state', (req, res) => {
   // Een tv die al was aangemeld voor deze versie, wordt zo meteen het eerste profiel.
   if (user && req.query.tv === '1') linkDevice(req, res, user.id);
   const profiles = req.query.tv === '1' ? deviceProfiles(deviceHash(req)).length : 0;
-  res.set('Cache-Control', 'no-store').json({ needsSetup: !hasUsers(), user: user && publicUser(user), subtitles: Boolean(user) && subtitleSettings().configured, profiles, version: config.version });
+  res.set('Cache-Control', 'no-store').json({ needsSetup: !hasUsers(), user: user && publicUser(user), subtitles: Boolean(user) && subtitleSettings().configured, downloads: Boolean(user) && downloadSettings().enabled, profiles, version: config.version });
 });
 
 // ---- Netwerk: thuisnetwerk of via een reverse proxy (beheerder)
@@ -202,6 +203,21 @@ app.post('/api/update', requireAdmin, (req, res) => {
 
 // ---- Ondertitels (OpenSubtitles)
 app.get('/api/subtitle-settings', requireAdmin, (req, res) => res.json(subtitleSettings()));
+
+// ---- Downloaden voor offline kijken (zie downloads.js)
+app.get('/api/download-settings', requireAdmin, (req, res) => res.json(downloadSettings()));
+app.post('/api/download-settings', requireAdmin, (req, res) => res.json(saveDownloadSettings({ enabled: req.body?.enabled === true })));
+app.get('/api/downloads/:id', requireUser, (req, res) => res.set('Cache-Control', 'no-store').json(downloadStatus(Number(req.params.id))));
+app.post('/api/downloads/:id', requireUser, async (req, res) => {
+  const item = db.prepare('SELECT * FROM items WHERE id = ?').get(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: 'Niet gevonden.' });
+  try {
+    res.json(await startDownload(item));
+  } catch (err) {
+    res.status(err instanceof UpstreamError ? 409 : 502).json({ error: err instanceof UpstreamError ? err.message : 'Downloaden lukt nu niet.' });
+  }
+});
+app.get('/api/downloads/:id/file', requireUser, (req, res) => serveDownload(req, res, Number(req.params.id)));
 
 app.post('/api/subtitle-settings', requireAdmin, async (req, res) => {
   try {
@@ -1171,6 +1187,7 @@ process.on('unhandledRejection', (err) => console.error(`Onverwachte fout: ${err
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     stopAllSessions();
+    stopDownloads();
     server.close();
     process.exit(0);
   });
