@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -78,7 +79,7 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " KijkboxTV/1.3");
+        settings.setUserAgentString(settings.getUserAgentString() + " KijkboxTV/1.4");
         web.addJavascriptInterface(new Bridge(), "KijkboxApp");
 
         CookieManager.getInstance().setAcceptCookie(true);
@@ -185,6 +186,19 @@ public class MainActivity extends Activity {
         input.setHint("192.168.1.50:3000");
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
         input.setMinWidth(dp(520));
+        // Eigen achtergrond: het standaardveld is op sommige tv's (TCL) wit met lichte tekst, onleesbaar.
+        final GradientDrawable field = new GradientDrawable();
+        field.setColor(Color.rgb(33, 37, 45));
+        field.setCornerRadius(dp(8));
+        field.setStroke(dp(2), Color.rgb(44, 49, 59));
+        input.setBackground(field);
+        input.setPadding(dp(18), dp(14), dp(18), dp(14));
+        input.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                field.setStroke(dp(hasFocus ? 3 : 2), hasFocus ? Color.rgb(242, 182, 50) : Color.rgb(44, 49, 59));
+            }
+        });
         if (home != null) input.setText(home);
         box.addView(input);
 
