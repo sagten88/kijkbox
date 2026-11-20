@@ -1,6 +1,10 @@
 # Kijkbox
 
-Je eigen IPTV-website met accounts. Werkt op telefoon, tablet en laptop.
+Je eigen IPTV-website met accounts. Werkt op telefoon, tablet, laptop en tv.
+
+> **Kijkbox levert zelf geen zenders, films of series.** Het is alleen de speler en de omgeving eromheen.
+> Je voegt zelf een bron toe die je al hebt, bijvoorbeeld van je IPTV-abonnement. Gebruik alleen bronnen
+> waar je recht op hebt. Wat je ermee bekijkt, is je eigen verantwoordelijkheid.
 
 ## Starten
 
@@ -222,3 +226,18 @@ npm test
 ```
 
 `npm run mock` start een nep-provider met testbeeld op poort 8899. Start de site daarvoor met `ALLOW_LOCAL_MEDIA=true`.
+
+## Ondersteuning en beveiliging
+
+Kijkbox is een hobbyproject en wordt gemaakt in de vrije tijd. Er is geen garantie en geen vaste ondersteuning.
+Vind je een fout, meld die dan als *issue* op GitHub. Vraag daar geen hulp bij het vinden van een bron of provider;
+zulke vragen worden gesloten.
+
+Vind je een **beveiligingsprobleem**, zet dat dan niet in een openbaar issue. Meld het via
+**Security > Report a vulnerability** op GitHub, dan kan het eerst opgelost worden.
+
+## Licentie
+
+Kijkbox valt onder de [GNU Affero General Public License, versie 3 of later](LICENSE) (AGPL-3.0-or-later).
+Je mag Kijkbox gebruiken, aanpassen en doorgeven. Bied je een aangepaste versie aan anderen aan, ook als website of
+dienst, dan moet je hun de broncode van die versie ook geven, onder dezelfde licentie.
