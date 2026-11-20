@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 740" role="img" aria-label="Kijkbox op een telefoon: overzicht van films" font-family="Manrope, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <style>
+    .t{fill:#f1f2f4}.m{fill:#9aa1ad}.c{fill:#181b21}
+    .card{animation:rise .8s ease-out both}
+    .d1{animation-delay:.1s}.d2{animation-delay:.2s}.d3{animation-delay:.3s}.d4{animation-delay:.4s}.d5{animation-delay:.5s}.d6{animation-delay:.6s}
+    @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <defs>
+    <linearGradient id="p1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2b632"/><stop offset="1" stop-color="#b4521f"/></linearGradient>
+    <linearGradient id="p2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#1e1b4b"/></linearGradient>
+    <linearGradient id="p3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14b8a6"/><stop offset="1" stop-color="#083344"/></linearGradient>
+    <linearGradient id="p4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e879f9"/><stop offset="1" stop-color="#3b0764"/></linearGradient>
+    <linearGradient id="p5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#94a3b8"/><stop offset="1" stop-color="#1e293b"/></linearGradient>
+    <linearGradient id="p6" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb7185"/><stop offset="1" stop-color="#4c0519"/></linearGradient>
+  </defs>
+  <rect x="4" y="4" width="372" height="732" rx="54" fill="#05070a" stroke="#2c313b" stroke-width="3"/>
+  <rect x="18" y="18" width="344" height="704" rx="42" fill="#101216"/>
+  <rect x="140" y="30" width="100" height="26" rx="13" fill="#05070a"/>
+  <text x="44" y="50" font-size="14" font-weight="700" class="t">20:14</text>
+
+  <text x="40" y="104" font-size="28" font-weight="800" class="t">Films</text>
+  <circle cx="330" cy="94" r="16" class="c"/><circle cx="327" cy="91" r="6" fill="none" stroke="#9aa1ad" stroke-width="2.5"/><path d="M332 96l6 6" stroke="#9aa1ad" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="40" y="124" width="98" height="30" rx="15" fill="#f2b632"/><text x="89" y="144" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1405">Nieuw</text>
+  <rect x="146" y="124" width="70" height="30" rx="15" class="c"/><text x="181" y="144" text-anchor="middle" font-size="13" class="m">Jaar</text>
+  <rect x="224" y="124" width="100" height="30" rx="15" class="c"/><text x="274" y="144" text-anchor="middle" font-size="13" class="m">Beoordeling</text>
+
+  <g class="card d1"><rect x="40" y="174" width="96" height="140" rx="10" fill="url(#p1)"/><text x="40" y="334" font-size="13" font-weight="700" class="t">Storm boven…</text><text x="40" y="352" font-size="12" class="m">2025 · 3 talen</text></g>
+  <g class="card d2"><rect x="142" y="174" width="96" height="140" rx="10" fill="url(#p2)"/><text x="142" y="334" font-size="13" font-weight="700" class="t">Blauw uur</text><text x="142" y="352" font-size="12" class="m">2024</text></g>
+  <g class="card d3"><rect x="244" y="174" width="96" height="140" rx="10" fill="url(#p3)"/><text x="244" y="334" font-size="13" font-weight="700" class="t">De diepte</text><text x="244" y="352" font-size="12" class="m">2026 · 2 talen</text></g>
+  <g class="card d4"><rect x="40" y="372" width="96" height="140" rx="10" fill="url(#p4)"/><text x="40" y="532" font-size="13" font-weight="700" class="t">Neon nacht</text><text x="40" y="550" font-size="12" class="m">2023</text></g>
+  <g class="card d5"><rect x="142" y="372" width="96" height="140" rx="10" fill="url(#p5)"/><text x="142" y="532" font-size="13" font-weight="700" class="t">Grijs gebied</text><text x="142" y="550" font-size="12" class="m">2025</text></g>
+  <g class="card d6"><rect x="244" y="372" width="96" height="140" rx="10" fill="url(#p6)"/><text x="244" y="532" font-size="13" font-weight="700" class="t">Rood licht</text><text x="244" y="552" font-size="12" class="m">2022</text></g>
+
+  <text x="40" y="596" font-size="15" font-weight="800" class="t">Verder kijken</text>
+  <rect x="40" y="610" width="140" height="22" rx="6" class="c"/><rect x="40" y="628" width="88" height="4" rx="2" fill="#f2b632"/>
+  <rect x="188" y="610" width="152" height="22" rx="6" class="c"/><rect x="188" y="628" width="40" height="4" rx="2" fill="#f2b632"/>
+
+  <rect x="18" y="650" width="344" height="72" fill="#0c0e12"/>
+  <path d="M18 650h344v30a42 42 0 0 1-42 42H60a42 42 0 0 1-42-42z" fill="#0c0e12"/>
+  <g font-size="11" text-anchor="middle">
+    <rect x="54" y="664" width="22" height="16" rx="3" fill="none" stroke="#9aa1ad" stroke-width="2.5"/><text x="65" y="698" class="m">Live</text>
+    <path d="M132 664h20M132 671h20M132 678h14" stroke="#9aa1ad" stroke-width="2.5" stroke-linecap="round"/><text x="142" y="698" class="m">Gids</text>
+    <rect x="208" y="662" width="20" height="20" rx="4" fill="#f2b632"/><text x="218" y="698" fill="#f2b632" font-weight="700">Films</text>
+    <rect x="284" y="664" width="22" height="16" rx="3" fill="none" stroke="#9aa1ad" stroke-width="2.5"/><path d="M290 662l5 3 5-3" stroke="#9aa1ad" stroke-width="2" fill="none"/><text x="295" y="698" class="m">Series</text>
+  </g>
+</svg>

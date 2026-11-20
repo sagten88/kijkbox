@@ -293,7 +293,21 @@ function authScreen({ title, intro, fields, submit, action }) {
   return h('div', { class: 'auth' }, h('div', { class: 'auth-card' },
     h('div', { class: 'brand' }, h('img', { src: '/icon.svg', alt: '' }), 'Kijkbox'),
     h('div', {}, h('h1', {}, title), intro && h('p', { class: 'muted' }, intro)),
-    form));
+    form,
+    aboutLine()));
+}
+
+// Wie Kijkbox maakt en waar de broncode staat. De AGPL vraagt dat gebruikers de broncode kunnen vinden.
+const SOURCE_URL = 'https://github.com/sagten88/kijkbox';
+const MAKER_URL = 'https://agtenhosting.com/tools/kijkbox/';
+
+function aboutLine() {
+  const version = document.querySelector('meta[name="kijkbox-version"]')?.content;
+  // Op de tv kun je geen link openen: daar het adres als tekst.
+  const link = (href, text) => (TV ? text : h('a', { href, target: '_blank', rel: 'noopener' }, text));
+  return h('p', { class: 'about muted small' },
+    `Kijkbox${version ? ` ${version}` : ''} · door `, link(MAKER_URL, 'Agten Hosting'), ' · ',
+    TV ? 'broncode: github.com/sagten88/kijkbox' : link(SOURCE_URL, 'Broncode (AGPL-3.0)'));
 }
 
 const field = (label, props) => h('label', {}, label, h('input', props));
@@ -2876,7 +2890,7 @@ function settingsView(container, tab = '') {
     mine.map(link),
     manage.length ? h('span', { class: 'settings-sep muted small' }, 'Beheer') : null,
     manage.map(link));
-  const page = h('div', { class: 'page settings' }, h('div', { class: 'page-head' }, h('h1', {}, 'Instellingen')), nav, ...current[3]().filter(Boolean));
+  const page = h('div', { class: 'page settings' }, h('div', { class: 'page-head' }, h('h1', {}, 'Instellingen')), nav, ...current[3]().filter(Boolean), aboutLine());
   container.replaceChildren(page);
 }
 

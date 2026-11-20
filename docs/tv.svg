@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 610" role="img" aria-label="Kijkbox op een tv: live-zender met tv-gids" font-family="Manrope, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <style>
+    .now{animation:now 24s linear infinite alternate}
+    @keyframes now{from{transform:translateX(0)}to{transform:translateX(150px)}}
+    .bar{animation:bar 24s linear infinite alternate;transform-origin:516px 0}
+    @keyframes bar{from{transform:scaleX(.35)}to{transform:scaleX(.8)}}
+    .play{animation:pulse 2.6s ease-in-out infinite;transform-origin:296px 205px}
+    @keyframes pulse{50%{transform:scale(1.08)}}
+    .shine{animation:shine 7s ease-in-out infinite}
+    @keyframes shine{0%,100%{opacity:.55}50%{opacity:1}}
+    .focus{animation:focus 6s steps(1) infinite}
+    @keyframes focus{0%{transform:translateY(0)}33%{transform:translateY(40px)}66%{transform:translateY(80px)}}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+    .t{fill:#f1f2f4}.m{fill:#9aa1ad}.c{fill:#181b21}.cur{fill:#3a3220}
+  </style>
+  <defs>
+    <linearGradient id="prev" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e3a5f"/><stop offset=".55" stop-color="#2b2350"/><stop offset="1" stop-color="#101216"/></linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2b632" stop-opacity=".35"/><stop offset="1" stop-color="#f2b632" stop-opacity="0"/></linearGradient>
+  </defs>
+  <!-- tv -->
+  <rect x="0" y="0" width="960" height="560" rx="22" fill="#05070a"/>
+  <rect x="18" y="18" width="924" height="524" rx="8" fill="#101216"/>
+  <path d="M430 560h100l24 34H406z" fill="#1a1d23"/><rect x="360" y="592" width="240" height="10" rx="5" fill="#1a1d23"/>
+
+  <!-- rail -->
+  <rect x="18" y="18" width="78" height="524" fill="#0c0e12"/>
+  <rect x="35" y="40" width="44" height="44" rx="12" fill="#f2b632"/><path d="M50 52v20l16-10z" fill="#101216"/>
+  <rect x="38" y="118" width="38" height="38" rx="10" fill="#3a3220"/><rect x="47" y="129" width="20" height="14" rx="3" fill="none" stroke="#f2b632" stroke-width="3"/>
+  <rect x="47" y="180" width="20" height="18" rx="3" fill="none" stroke="#9aa1ad" stroke-width="3"/>
+  <path d="M47 232h20M47 240h20M47 248h14" stroke="#9aa1ad" stroke-width="3" stroke-linecap="round"/>
+  <rect x="46" y="282" width="22" height="16" rx="3" fill="none" stroke="#9aa1ad" stroke-width="3"/>
+  <circle cx="57" cy="500" r="12" fill="none" stroke="#9aa1ad" stroke-width="3"/>
+
+  <!-- kop -->
+  <text x="120" y="66" class="t" font-size="28" font-weight="800">Live</text>
+  <rect x="200" y="44" width="112" height="30" rx="15" fill="#f2b632"/><text x="256" y="64" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1405">Nederland</text>
+  <rect x="322" y="44" width="76" height="30" rx="15" class="c"/><text x="360" y="64" text-anchor="middle" font-size="14" class="m">Sport</text>
+  <rect x="408" y="44" width="84" height="30" rx="15" class="c"/><text x="450" y="64" text-anchor="middle" font-size="14" class="m">Nieuws</text>
+  <rect x="502" y="44" width="64" height="30" rx="15" class="c"/><text x="534" y="64" text-anchor="middle" font-size="14" class="m">Kids</text>
+  <rect x="740" y="44" width="180" height="30" rx="8" class="c"/><text x="756" y="64" font-size="14" class="m">Zoeken…</text>
+
+  <!-- speler -->
+  <rect x="120" y="96" width="352" height="198" rx="12" fill="url(#prev)"/>
+  <path class="shine" d="M120 230 Q200 170 290 205 T472 180 V282 a12 12 0 0 1-12 12 H132 a12 12 0 0 1-12-12z" fill="url(#sky)"/>
+  <g class="play"><circle cx="296" cy="205" r="30" fill="#f2b632"/><path d="M287 191v28l23-14z" fill="#101216"/></g>
+  <rect x="134" y="108" width="54" height="22" rx="6" fill="#ff5a4e"/><text x="161" y="124" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">LIVE</text>
+
+  <!-- nu/straks -->
+  <text x="500" y="122" class="t" font-size="22" font-weight="800">Polder TV</text>
+  <text x="500" y="152" class="m" font-size="15">Nu · 20:00 – 20:45</text>
+  <text x="500" y="184" class="t" font-size="19" font-weight="700">Avondjournaal</text>
+  <rect x="500" y="200" width="420" height="6" rx="3" fill="#2c313b"/>
+  <rect class="bar" x="500" y="200" width="420" height="6" rx="3" fill="#f2b632"/>
+  <text x="500" y="240" class="m" font-size="15">Straks · 20:45</text>
+  <text x="500" y="266" class="t" font-size="17">Weer &amp; verkeer</text>
+  <rect x="820" y="252" width="100" height="32" rx="8" class="c"/><text x="870" y="273" text-anchor="middle" font-size="13" font-weight="700" fill="#f2b632">★ Favoriet</text>
+
+  <!-- gids -->
+  <g font-size="13" class="m">
+    <text x="252" y="326">20:00</text><text x="422" y="326">20:30</text><text x="592" y="326">21:00</text><text x="762" y="326">21:30</text>
+  </g>
+  <g class="focus"><rect x="116" y="338" width="808" height="36" rx="9" fill="none" stroke="#f2b632" stroke-width="2.5"/></g>
+  <g font-size="14">
+    <rect x="120" y="340" width="122" height="32" rx="7" class="c"/><text x="134" y="361" class="t" font-weight="700">Polder TV</text>
+    <rect x="248" y="340" width="250" height="32" rx="7" class="cur"/><text x="260" y="361" class="t">Avondjournaal</text>
+    <rect x="502" y="340" width="150" height="32" rx="7" class="c"/><text x="514" y="361" class="m">Weer &amp; verkeer</text>
+    <rect x="656" y="340" width="264" height="32" rx="7" class="c"/><text x="668" y="361" class="m">De Dijkwachters</text>
+
+    <rect x="120" y="380" width="122" height="32" rx="7" class="c"/><text x="134" y="401" class="t" font-weight="700">Kanaal Noord</text>
+    <rect x="248" y="380" width="170" height="32" rx="7" class="cur"/><text x="260" y="401" class="t">Op de Wadden</text>
+    <rect x="422" y="380" width="330" height="32" rx="7" class="c"/><text x="434" y="401" class="m">Film: Storm boven Texel</text>
+    <rect x="756" y="380" width="164" height="32" rx="7" class="c"/><text x="768" y="401" class="m">Nachtradio</text>
+
+    <rect x="120" y="420" width="122" height="32" rx="7" class="c"/><text x="134" y="441" class="t" font-weight="700">Sport Live</text>
+    <rect x="248" y="420" width="420" height="32" rx="7" class="cur"/><text x="260" y="441" class="t">Schaatsen: NK afstanden</text>
+    <rect x="672" y="420" width="248" height="32" rx="7" class="c"/><text x="684" y="441" class="m">Sportjournaal</text>
+
+    <rect x="120" y="460" width="122" height="32" rx="7" class="c"/><text x="134" y="481" class="t" font-weight="700">Natuur HD</text>
+    <rect x="248" y="460" width="250" height="32" rx="7" class="cur"/><text x="260" y="481" class="t">Vogels van de polder</text>
+    <rect x="502" y="460" width="418" height="32" rx="7" class="c"/><text x="514" y="481" class="m">Onder water</text>
+
+    <rect x="120" y="500" width="122" height="32" rx="7" class="c"/><text x="134" y="521" class="t" font-weight="700">Kids Plaza</text>
+    <rect x="248" y="500" width="130" height="32" rx="7" class="cur"/><text x="260" y="521" class="t">Tekenfilm</text>
+    <rect x="382" y="500" width="200" height="32" rx="7" class="c"/><text x="394" y="521" class="m">Knutselklub</text>
+    <rect x="586" y="500" width="334" height="32" rx="7" class="c"/><text x="598" y="521" class="m">Slaap lekker</text>
+  </g>
+  <g class="now"><rect x="372" y="332" width="2.5" height="204" fill="#f2b632"/><circle cx="373" cy="332" r="5" fill="#f2b632"/></g>
+</svg>

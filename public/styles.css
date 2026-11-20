@@ -53,6 +53,8 @@ h2 { font-size: 17px; }
 .icon.filled { fill: currentColor; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
+.about { text-align: center; margin: 28px 0 8px; }
+.about a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .grow { flex: 1; min-width: 0; }
 .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .error { color: var(--danger); }

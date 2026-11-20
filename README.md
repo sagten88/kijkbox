@@ -1,17 +1,65 @@
+<p align="center"><img src="docs/banner.svg" alt="Kijkbox: je eigen tv-omgeving voor het hele huis" width="100%"></p>
+
+<p align="center">
+  <a href="#installeren-op-proxmox"><b>Installeren</b></a> ·
+  <a href="#zo-werkt-het"><b>Zo werkt het</b></a> ·
+  <a href="#tv-app-google-tv--android-tv"><b>Tv-app</b></a> ·
+  <a href="https://agtenhosting.com/tools/kijkbox/"><b>Website</b></a>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="Licentie: AGPL-3.0" src="https://img.shields.io/badge/licentie-AGPL--3.0-f2b632?style=flat-square"></a>
+  <a href="https://github.com/sagten88/kijkbox/tags"><img alt="Nieuwste versie" src="https://img.shields.io/github/v/tag/sagten88/kijkbox?filter=v*&label=versie&style=flat-square&color=14B8A6"></a>
+  <a href="#gemaakt-met-claude"><img alt="Gemaakt met Claude" src="https://img.shields.io/badge/gemaakt%20met-Claude-d97757?style=flat-square"></a>
+</p>
+
 # Kijkbox
 
-Je eigen IPTV-website met accounts. Werkt op telefoon, tablet, laptop en tv.
+Je eigen IPTV-website met accounts: live tv met gids, films en series, op telefoon, tablet, laptop en tv.
+Kijkbox draait op je eigen server. Iedereen in huis krijgt een eigen account, met eigen favorieten en "verder kijken".
 
 > **Kijkbox levert zelf geen zenders, films of series.** Het is alleen de speler en de omgeving eromheen.
 > Je voegt zelf een bron toe die je al hebt, bijvoorbeeld van je IPTV-abonnement. Gebruik alleen bronnen
 > waar je recht op hebt. Wat je ermee bekijkt, is je eigen verantwoordelijkheid.
 
-## Starten
+## Installeren op Proxmox
 
-1. Dubbelklik op **Start Kijkbox.bat**.
-2. Open `http://localhost:3000` op deze pc.
-3. Maak het beheerdersaccount aan. De installatiecode staat in het zwarte venster.
-4. Ga naar **Account** en voeg onder **Bron toevoegen** je IPTV-bron toe.
+Open de shell van je Proxmox-host (als root) en voer uit:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/sagten88/kijkbox/main/install.sh)"
+```
+
+<p align="center"><img src="docs/installeren.svg" alt="Het installatiescript in een terminal: container aanmaken, Kijkbox ophalen, handtekening controleren, Kijkbox draait" width="80%"></p>
+
+Het script:
+
+1. vraagt een paar dingen (containernummer, opslag, geheugen, netwerk), met standaardwaarden;
+2. maakt een Debian 13-container en haalt Kijkbox op van GitHub;
+3. installeert alleen een versie met een geldige handtekening van de uitgever;
+4. installeert Node.js en FFmpeg en stelt automatische updates in;
+5. toont het adres en de **installatiecode** voor het eerste account.
+
+Open dat adres, maak met de installatiecode je beheerdersaccount en voeg bij **Instellingen > Bronnen** je bron toe.
+Meer over paden, updates en gebruik buiten huis staat bij [Proxmox: details](#proxmox-details).
+
+## Zo werkt het
+
+<p align="center"><img src="docs/hoe-het-werkt.svg" alt="Jouw bron gaat via je eigen Kijkbox-server naar telefoon, tablet, laptop en tv" width="100%"></p>
+
+<p align="center">
+  <img src="docs/tv.svg" alt="Kijkbox op een tv: live-zender met de tv-gids eronder" width="62%">
+  <img src="docs/telefoon.svg" alt="Kijkbox op een telefoon: films" width="30%">
+</p>
+<p align="center"><sub>Illustraties van Kijkbox op een tv en een telefoon.</sub></p>
+
+## Op een Windows-pc (zonder Proxmox)
+
+1. Installeer [Node.js](https://nodejs.org) (versie 24 of nieuwer) en download deze code (**Code > Download ZIP**).
+2. Dubbelklik op **Start Kijkbox.bat**.
+3. Open `http://localhost:3000` op deze pc.
+4. Maak het beheerdersaccount aan. De installatiecode staat in het zwarte venster.
+5. Ga naar **Instellingen > Bronnen** en voeg je bron toe.
 
 Laat het zwarte venster open: de site draait zolang dat openstaat.
 
@@ -163,23 +211,10 @@ eigen kleurthema; geel is de standaard.
 - **Back-up:** de map `data` bevat alles: accounts, bronnen (met provider-wachtwoorden) en favorieten.
   Deel die map niet.
 
-## Op Proxmox (installatiescript)
+## Proxmox: details
 
-Open de shell van je Proxmox-host (als root) en voer uit:
-
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/sagten88/kijkbox/main/install.sh)"
-```
-
-Het script:
-
-1. vraagt een paar dingen (containernummer, opslag, geheugen, netwerk), met standaardwaarden;
-2. maakt een Debian 13-container en installeert Node.js en FFmpeg;
-3. installeert alleen een versie met een geldige handtekening van de uitgever;
-4. stelt automatische updates in;
-5. toont het adres en de **installatiecode** voor het eerste account.
-
-Kijkbox werkt daarna eerst **alleen op je thuisnetwerk** (zie hieronder).
+Installeren staat [bovenaan](#installeren-op-proxmox). Kijkbox werkt daarna eerst **alleen op je thuisnetwerk**
+(zie hieronder).
 
 | Wat | Waar |
 | --- | --- |
@@ -287,8 +322,25 @@ zulke vragen worden gesloten.
 Vind je een **beveiligingsprobleem**, zet dat dan niet in een openbaar issue. Meld het via
 **Security > Report a vulnerability** op GitHub, dan kan het eerst opgelost worden.
 
+## Gemaakt met Claude
+
+Kijkbox is gebouwd met [Claude](https://claude.com/product/claude-code), de AI van Anthropic, via Claude Code. Claude heeft
+vrijwel alle code geschreven: de website, de server, de tv-app, de installatiescripts en ook deze tekst. Agten Hosting
+bepaalt wat er gebouwd wordt, test het, en ondertekent en publiceert elke versie. Commits waar Claude aan werkte,
+staan in de geschiedenis met `Co-Authored-By: Claude`.
+
+## Naam en merk
+
+De licentie hieronder gaat over de code. De naam **Kijkbox**, het logo en de naam **Agten Hosting** horen daar niet bij.
+Maak je een eigen, aangepaste versie, geef die dan een andere naam en wek niet de indruk dat het de officiële Kijkbox is.
+Laat de regel "door Agten Hosting" met de link naar de broncode staan, onder het inlogscherm en onderaan Instellingen.
+
 ## Licentie
 
 Kijkbox valt onder de [GNU Affero General Public License, versie 3 of later](LICENSE) (AGPL-3.0-or-later).
 Je mag Kijkbox gebruiken, aanpassen en doorgeven. Bied je een aangepaste versie aan anderen aan, ook als website of
 dienst, dan moet je hun de broncode van die versie ook geven, onder dezelfde licentie.
+
+Copyright © 2026 Agten Hosting. Aanvullende voorwaarde volgens artikel 7(b) van de AGPL: in elke versie blijft de
+vermelding "door Agten Hosting" met een link naar de broncode zichtbaar voor gebruikers, zoals nu onder het inlogscherm
+en onderaan Instellingen (bij een aangepaste versie mag daar "gebaseerd op Kijkbox door Agten Hosting" staan).
