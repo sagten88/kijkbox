@@ -82,7 +82,7 @@ function launch(job) {
   const args = ['-hide_banner', '-nostdin', '-user_agent', userAgent];
   if (item.referer) args.push('-headers', `Referer: ${item.referer}\r\n`);
   args.push('-reconnect', '1', '-reconnect_on_network_error', '1', '-reconnect_delay_max', '10',
-    '-fflags', '+genpts+discardcorrupt', '-i', item.url, '-map', '0:v:0?', '-map', '0:a:0?');
+    '-fflags', '+genpts+discardcorrupt', '-protocol_whitelist', 'http,https,tcp,tls,crypto,hls', '-i', item.url, '-map', '0:v:0?', '-map', '0:a:0?');
   if (job.transcode) {
     args.push('-vf', "yadif=mode=0:parity=-1:deint=1,scale=-2:'min(1080,ih)',format=yuv420p",
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');

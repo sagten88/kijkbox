@@ -186,10 +186,26 @@ export function loginBlocked(key) {
   return entry.fails >= MAX_FAILS;
 }
 
+// Zonder grens groeit de lijst met elke verzonnen gebruikersnaam; oude pogingen dus opruimen.
+const MAX_ENTRIES = 10_000;
+function pruneAttempts() {
+  const now = Date.now();
+  for (const [key, entry] of attempts) if (now - entry.first > WINDOW) attempts.delete(key);
+  // Nog steeds te veel (veel pogingen binnen een kwartier): de oudste eerst weg.
+  for (const key of attempts.keys()) {
+    if (attempts.size < MAX_ENTRIES) break;
+    attempts.delete(key);
+  }
+}
+
 export function loginFailed(key) {
   const entry = attempts.get(key);
-  if (entry && Date.now() - entry.first <= WINDOW) entry.fails += 1;
-  else attempts.set(key, { first: Date.now(), fails: 1 });
+  if (entry && Date.now() - entry.first <= WINDOW) {
+    entry.fails += 1;
+    return;
+  }
+  if (attempts.size >= MAX_ENTRIES) pruneAttempts();
+  attempts.set(key, { first: Date.now(), fails: 1 });
 }
 
 export const loginSucceeded = (key) => attempts.delete(key);

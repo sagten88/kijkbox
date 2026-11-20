@@ -81,7 +81,13 @@ app.use((req, res, next) => {
 
 const smallJson = express.json({ limit: '64kb' });
 const largeJson = express.json({ limit: '80mb' });
-app.use('/api', (req, res, next) => (req.path === '/sources' || req.path === '/backups/restore' ? largeJson : smallJson)(req, res, next));
+// Grote verzoeken (een M3U-bestand, een back-up) alleen van een beheerder: eerst inloggen controleren,
+// pas dan tot 80 MB inlezen. Anders kan iedereen op het netwerk de server bezighouden met enorme verzoeken.
+const LARGE = new Set(['/sources', '/backups/restore']);
+app.use('/api', (req, res, next) => {
+  if (!LARGE.has(req.path) || req.method !== 'POST') return smallJson(req, res, next);
+  requireAdmin(req, res, () => largeJson(req, res, next));
+});
 
 // ---- Eerste keer opstarten
 const hasUsers = () => db.prepare('SELECT 1 FROM users LIMIT 1').get() !== undefined;

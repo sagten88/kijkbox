@@ -172,7 +172,7 @@ test('Back-up: terugzetten, ook als de bron nog niet opnieuw is ingelezen', asyn
 const { isLocalAddress, trustProxyValue } = await import('../server/network.js');
 
 test('Alleen thuisnetwerk: lokale adressen herkennen', () => {
-  for (const ip of ['127.0.0.1', '::1', '192.168.1.24', '::ffff:192.168.1.5', '10.0.0.9', '172.20.0.2', '100.103.221.120', 'fd00::1', 'fe80::1']) {
+  for (const ip of ['127.0.0.1', '::1', '192.168.1.24', '::ffff:192.168.1.5', '10.0.0.9', '172.20.0.2', '100.64.1.20', 'fd00::1', 'fe80::1']) {
     assert.equal(isLocalAddress(ip), true, ip);
   }
   for (const ip of ['8.8.8.8', '::ffff:84.10.1.2', '2a02:a46f::1', '172.32.0.1', '', undefined, 'onzin']) {

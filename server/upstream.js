@@ -65,7 +65,8 @@ export async function assertHostAllowed(value) {
   const host = url.hostname.replace(/^\[|\]$/g, '');
   if (net.isIP(host)) return;
   const addresses = await dns.promises.lookup(host, { all: true });
-  if (!addresses.some((a) => ipAllowed(a.address))) throw new UpstreamError('Dit adres is geblokkeerd.');
+  // Alle adressen moeten mogen: ffmpeg kiest zelf welk adres het gebruikt.
+  if (!addresses.length || !addresses.every((a) => ipAllowed(a.address))) throw new UpstreamError('Dit adres is geblokkeerd.');
 }
 
 function once(url, { headers, signal, timeout }) {
