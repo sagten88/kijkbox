@@ -1,0 +1,29 @@
+# Kijkbox buiten huis, met https via Caddy. Nodig: een domeinnaam die naar deze server wijst,
+# en poort 80 en 443 open naar deze server.
+#
+# 1. Zet je domein in de Caddyfile.
+# 2. Start beide bestanden samen:
+#      docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+#
+# Caddy haalt zelf een certificaat op. Kijkbox is dan alleen nog via Caddy bereikbaar.
+services:
+  kijkbox:
+    ports: !reset []
+    environment:
+      TRUST_PROXY: "1"
+      SECURE_COOKIES: "true"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - kijkbox
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  caddy-data:

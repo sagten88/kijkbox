@@ -1,24 +1,26 @@
-# Voor een VPS met een eigen domeinnaam. Zet je domein in de Caddyfile
-# en start met: docker compose up -d --build
+# Kijkbox met Docker, voor gebruik thuis.
+#
+#   docker compose up -d
+#
+# Open daarna http://<ip-van-deze-computer>:3000. De installatiecode voor het eerste account:
+#   docker compose logs kijkbox | grep Installatiecode
+#
+# Bijwerken:  docker compose pull && docker compose up -d
+# Buiten huis met https (eigen domeinnaam): zie docker-compose.https.yml.
 services:
   kijkbox:
-    build: .
-    restart: unless-stopped
-    environment:
-      TRUST_PROXY: "1"
-      SECURE_COOKIES: "true"
-    volumes:
-      - ./data:/data
-
-  caddy:
-    image: caddy:2-alpine
+    image: ghcr.io/sagten88/kijkbox:latest
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "3000:3000"
+    environment:
+      TZ: Europe/Amsterdam
+      # Bronnen op je eigen netwerk (tv-ontvanger, NAS) toestaan:
+      # ALLOW_PRIVATE_MEDIA: "true"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
+      # Een Docker-volume, geen gewone map: dan mag Kijkbox er meteen in schrijven.
+      # Hier staan accounts, bronnen en favorieten. Maak er een back-up van.
+      - kijkbox-data:/data
 
 volumes:
-  caddy-data:
+  kijkbox-data:

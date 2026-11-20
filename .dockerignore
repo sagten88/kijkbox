@@ -1,0 +1,10 @@
+# Alleen wat het image nodig heeft. Zeker niet: gegevens (wachtwoorden van bronnen) en de ondertekensleutel.
+.git
+.github
+node_modules
+data
+tv-app
+test
+docs
+deploy
+*.md
