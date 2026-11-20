@@ -1,0 +1,42 @@
+# Bij een versie-tag (v1.7.0): release op GitHub met de beschrijving uit de tag en de tv-app erbij.
+# De tag zelf wordt ondertekend door de uitgever; deze workflow controleert die handtekening eerst.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Handtekening van de tag controleren
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # checkout zet de tag soms neer zonder beschrijving; haal hem precies op.
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          echo 'release@kijkbox namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ/JQkEyguheAlzgd1t9/UpeSjQliolmtkJmL64alr8D' > allowed_signers
+          git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=allowed_signers verify-tag "$TAG"
+
+      - name: Release maken
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          git tag -l --format='%(contents:body)' "$TAG" | sed '/^-----BEGIN SSH SIGNATURE/,$d' | sed '/^[[:space:]]*$/d' | sed '/^-/!s/^/- /' > notes.md
+          cat >> notes.md <<'EOF'
+
+          **Installeren:** zie de [README](https://github.com/sagten88/kijkbox#installeren-op-proxmox) (Proxmox) of
+          [Docker](https://github.com/sagten88/kijkbox#docker). Bestaande servers krijgen deze versie via Instellingen > Updates.
+
+          <sub>Deze versie is ondertekend door de uitgever. Servers met Kijkbox installeren alleen versies met een geldige handtekening.</sub>
+          EOF
+          cp public/tv.apk kijkbox-tv.apk
+          gh release create "$TAG" kijkbox-tv.apk --verify-tag --latest --title "Kijkbox ${TAG#v}" --notes-file notes.md
