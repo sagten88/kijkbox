@@ -43,6 +43,8 @@ Het script:
 Open dat adres, maak met de installatiecode je beheerdersaccount en voeg bij **Instellingen > Bronnen** je bron toe.
 Meer over paden, updates en gebruik buiten huis staat bij [Proxmox: details](#proxmox-details).
 
+**Liever Docker?** Download [docker-compose.yml](docker-compose.yml) en start met `docker compose up -d`; zie [Docker](#docker).
+
 ## Zo werkt het
 
 <p align="center"><img src="docs/hoe-het-werkt.svg" alt="Jouw bron gaat via je eigen Kijkbox-server naar telefoon, tablet, laptop en tv" width="100%"></p>
@@ -274,19 +276,35 @@ journalctl -u kijkbox -f
 
 Maak een back-up van de container in Proxmox, want daar staan nu al je gegevens.
 
-## Verhuizen naar een VPS
+## Docker
 
-Op de VPS is Docker nodig, plus een domeinnaam die naar de server wijst.
+Er is een kant-en-klaar image voor amd64 en arm64 (bijvoorbeeld een Raspberry Pi 4 of 5):
+`ghcr.io/sagten88/kijkbox`. Elke versie wordt automatisch getest met de compose-bestanden hieronder.
 
-1. Kopieer deze map naar de server, inclusief `data` als je je accounts wilt houden.
-2. Zet je domein in de `Caddyfile`.
-3. Start de site:
+**Thuis:** download [docker-compose.yml](docker-compose.yml) en start:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
-Caddy regelt HTTPS automatisch. De Docker-bestanden zijn nog niet getest; zie ze als startpunt.
+Open `http://<ip-van-deze-computer>:3000`. De installatiecode voor het eerste account vind je zo:
+
+```bash
+docker compose logs kijkbox | grep Installatiecode
+```
+
+Bijwerken doe je met `docker compose pull` en daarna `docker compose up -d`. De gegevens staan in het Docker-volume
+`kijkbox-data`; maak daar een back-up van (of gebruik Instellingen > Back-ups). Kijkbox werkt ook in Docker standaard
+alleen op je thuisnetwerk. Updates via Instellingen > Updates zijn er in Docker niet: dat doet `docker compose pull`.
+
+**Buiten huis met https:** nodig zijn een domeinnaam die naar de server wijst en poort 80 en 443. Zet je domein in de
+[Caddyfile](Caddyfile) en start met beide bestanden:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+```
+
+Caddy haalt zelf een certificaat op. Kijkbox is dan alleen via Caddy bereikbaar.
 
 ## Instellingen
 
