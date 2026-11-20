@@ -21,10 +21,31 @@ LOCK=/run/kijkbox-update.lock
 IDLE_SECONDS=30
 MAX_WAIT_SECONDS=$((6 * 3600))
 
-export GIT_SSH_COMMAND="ssh -i $ETC/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$ETC/known_hosts"
+PUBLIC_REPO=https://github.com/sagten88/kijkbox.git
+
+# Nooit om een wachtwoord vragen: dit draait zonder iemand erbij.
+export GIT_TERMINAL_PROMPT=0
+# Oudere installaties halen updates via SSH met een eigen sleutel (deploy key). Zolang ze nog niet
+# zijn overgestapt op de openbare repository, blijft dat werken.
+if [ -f "$ETC/deploy_key" ]; then
+  export GIT_SSH_COMMAND="ssh -i $ETC/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$ETC/known_hosts"
+fi
 git_() { git -C "$SRC" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$ETC/allowed_signers" -c advice.detachedHead=false "$@"; }
 
 log() { echo "kijkbox-update: $*"; }
+
+# Overstappen van SSH (met sleutel) naar https zodra de openbare repository bereikbaar is.
+# Daarna is de sleutel niet meer nodig. De handtekening op elke versie blijft wel verplicht.
+use_public_repo() {
+  local url
+  url="$(git -C "$SRC" remote get-url origin 2>/dev/null || true)"
+  case "$url" in https://*) return 0 ;; esac
+  if git -c credential.helper= ls-remote --exit-code --tags "$PUBLIC_REPO" >/dev/null 2>&1; then
+    git -C "$SRC" remote set-url origin "$PUBLIC_REPO"
+    git -C "$SRC" config --unset core.sshCommand 2>/dev/null || true
+    log "updates komen voortaan via https uit de openbare repository"
+  fi
+}
 
 installed_version() { node -p "require('$APP/package.json').version" 2>/dev/null || echo "0.0.0"; }
 
@@ -49,6 +70,7 @@ tag_notes() { git_ tag -l --format='%(contents:subject)%0a%(contents:body)' "$1"
 # beschrijvingen van álle versies die nieuwer zijn dan de geïnstalleerde (nieuwste eerst). Wie een
 # paar versies heeft overgeslagen, ziet zo in één keer wat er allemaal veranderd is.
 find_latest() {
+  use_public_repo
   git_ fetch --quiet --force --prune --tags origin
   local current
   current="$(installed_version)"
@@ -163,7 +185,7 @@ check() {
       log "geïnstalleerd: $(installed_version), nieuwste: $LATEST"
     fi
   else
-    write_status error "" "Kon geen versie ophalen. Heeft deze server toegang tot de repository?" ""
+    write_status error "" "Kon geen versie ophalen. Heeft de server internet, en is GitHub bereikbaar?" ""
     return 1
   fi
 }

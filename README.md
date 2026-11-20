@@ -46,18 +46,62 @@ Bronnen en de tv-gids worden elke nacht om 04:00 vanzelf bijgewerkt (ander uur: 
 
 ## Tv-app (Google TV / Android TV)
 
+Er is een app voor **Google TV** en **Android TV** (bijvoorbeeld Philips, Sony, TCL, of een Chromecast met Google TV).
+Met de afstandsbediening navigeer je door Live, Gids, Films en Series. Tv's met een eigen systeem, zoals Samsung (Tizen),
+LG (webOS) en de meeste Hisense (VIDAA), kunnen de app niet installeren; gebruik daar een Chromecast met Google TV.
+
+Je hebt het adres van je Kijkbox-server nodig, bijvoorbeeld `192.168.1.50:3000`. Je vindt het ook in Kijkbox bij
+**Account > Tv koppelen**.
+
+### Tv-app installeren
+
+**Manier 1: zonder computer (met de app Downloader)**
+
+1. Open op de tv de **Google Play Store**, zoek **Downloader** (van AFTVnews) en installeer die.
+2. Geef Downloader toestemming om apps te installeren:
+   **Instellingen > Apps > Beveiliging en beperkingen > Onbekende bronnen > Downloader** aan.
+   (De naam kan per tv iets verschillen; op sommige tv's vraagt Downloader het vanzelf.)
+3. Open Downloader en typ het adres van je server met `/tv.apk` erachter, bijvoorbeeld `http://192.168.1.50:3000/tv.apk`.
+4. Kies **Installeren**. Open daarna **Kijkbox** en vul het adres van je server in.
+
+**Manier 2: vanaf een Windows-pc**
+
+De installer zet de app via het netwerk op de tv en vult het serveradres meteen in.
+
+1. Op de tv (eenmalig): **Instellingen > Systeem > Over**, klik **7 keer** op **Android TV OS-build** (of *Build*).
+   Zet daarna bij **Instellingen > Systeem > Ontwikkelaarsopties** **USB-foutopsporing** aan (op nieuwere tv's
+   **Draadloze foutopsporing**; de installer helpt dan met koppelen). Zoek het IP-adres van de tv op bij
+   **Instellingen > Netwerk en internet**.
+2. Open op de pc **PowerShell** en voer uit:
+
+   ```powershell
+   irm https://raw.githubusercontent.com/sagten88/kijkbox/main/install-tv-app.ps1 | iex
+   ```
+
+3. Kies op de tv **Altijd toestaan vanaf deze computer** en **Toestaan** als daarom gevraagd wordt.
+
+De app staat ook bij de [releases](https://github.com/sagten88/kijkbox/releases) als download.
+
+### Daarna
+
+- **Koppelen:** de tv toont een code. Vul die op je telefoon in onder **Account > Tv koppelen**. Met de **+** op het
+  profielscherm voeg je later meer accounts toe.
+- **Serveradres wijzigen:** via **Account > Serveradres van de app wijzigen**, de Menu-toets, of het foutscherm als de
+  server niet bereikbaar is.
+- **Updates:** veranderingen aan de site komen vanzelf op de tv. Een nieuwe versie van de app zelf is zelden nodig;
+  installeer die dan op dezelfde manier opnieuw (je instellingen blijven bewaard).
+
+### Voor ontwikkelaars
+
 `tv-app/` bevat een kleine Android-app die de site schermvullend opent in een tv-weergave voor de afstandsbediening.
 De app voegt `KijkboxTV` toe aan de browsernaam; met `?tv` achter het adres zie je dezelfde weergave in een gewone browser.
 
-- **Koppelen:** de tv toont een code. Vul die op je telefoon in onder **Account > Tv koppelen**.
-- **Serveradres:** bij de eerste start vraagt de app het adres van je server (bijvoorbeeld `192.168.1.50:3000` of
-  `https://tv.jouwdomein.nl`). Wijzigen kan later via **Account > Serveradres van de app wijzigen**, de Menu-toets, of
-  het foutscherm als de server niet bereikbaar is.
-- **Bouwen:** `powershell -ExecutionPolicy Bypass -File tv-app\build.ps1 -Version 3`. Verhoog het versienummer bij elke nieuwe build.
-- **Installeren:** `adb connect <ip-van-tv>:5555` en daarna `adb install -r tv-app\kijkbox-tv.apk`. Het adres kan meteen
-  mee: `adb shell am start -n nl.agtenhosting.kijkbox/.MainActivity --es server <adres>`.
-- **Ondertekenen:** `tv-app\signing\` bevat de sleutel. Bewaar die goed: een update moet met dezelfde sleutel ondertekend zijn.
-- **Updates:** veranderingen aan de site komen vanzelf op de tv. Een nieuwe APK is alleen nodig als `tv-app/` verandert.
+- **Bouwen:** `powershell -ExecutionPolicy Bypass -File tv-app\build.ps1 -Version 4`. Verhoog het versienummer bij elke nieuwe build.
+- **Installeren met ADB:** `adb connect <ip-van-tv>:5555` en daarna `adb install -r tv-app\kijkbox-tv.apk`. Het adres kan
+  meteen mee: `adb shell am start -n nl.agtenhosting.kijkbox/.MainActivity --es server <adres>`.
+- **Ondertekenen:** de sleutel hoort in `tv-app\signing\`, en staat niet in de repository. Een update moet met dezelfde
+  sleutel ondertekend zijn als de geïnstalleerde app. Zelf gebouwd met een eigen sleutel? Verwijder dan eerst de app van
+  de tv.
 
 ## Filteren op land
 
@@ -121,14 +165,21 @@ eigen kleurthema; geel is de standaard.
 
 ## Op Proxmox (installatiescript)
 
-Installeren gaat met één regel in de shell van de Proxmox-host; zie de repository
-[kijkbox-installer](https://github.com/sagten88/kijkbox-installer). Het script maakt een Debian 13-container,
-zet Kijkbox erin en stelt updates in. Elke server krijgt een eigen sleutel die deze (privé-)repository alleen mag
-**lezen**; de beheerder voegt die toe als *deploy key*:
+Open de shell van je Proxmox-host (als root) en voer uit:
 
 ```bash
-gh repo deploy-key add sleutel.pub --repo sagten88/kijkbox --title "naam van de server"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/sagten88/kijkbox/main/install.sh)"
 ```
+
+Het script:
+
+1. vraagt een paar dingen (containernummer, opslag, geheugen, netwerk), met standaardwaarden;
+2. maakt een Debian 13-container en installeert Node.js en FFmpeg;
+3. installeert alleen een versie met een geldige handtekening van de uitgever;
+4. stelt automatische updates in;
+5. toont het adres en de **installatiecode** voor het eerste account.
+
+Kijkbox werkt daarna eerst **alleen op je thuisnetwerk** (zie hieronder).
 
 | Wat | Waar |
 | --- | --- |
