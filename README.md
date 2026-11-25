@@ -201,7 +201,9 @@ de beheerder zet het aan bij **Instellingen > Server > Samen kijken**.
   pijltje rechts). Jij bent dan de gastheer en bedient afspelen, pauze, spoelen en een andere zender of aflevering.
 - **Meekijken:** anderen zien het op **Home** onder **Samen kijken**, of openen de link (knop **Link** in de speler).
   Meekijkers lopen gelijk met de gastheer, binnen een seconde, ook bij live.
-- **Stoppen:** de gastheer stopt het voor iedereen. Een meekijker kan **Alleen verder kijken** of de speler sluiten.
+- **Stoppen:** stopt de gastheer (speler dicht, of **Stoppen** bij samen kijken), dan stopt het ook bij de
+  meekijkers. Een meekijker kan zelf **Stoppen met meekijken** of de speler sluiten.
+- **Verder kijken:** wat je samen kijkt, komt alleen bij de gastheer in **Verder kijken**, niet bij de meekijkers.
 - **Eén verbinding:** iedereen kijkt naar dezelfde stream op de server, dus je provider ziet maar één verbinding.
 - Het werkt alleen tussen accounts op deze Kijkbox, niet met mensen buiten je huis.
 

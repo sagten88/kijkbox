@@ -888,6 +888,8 @@ function teardownEngine() {
 function saveProgress(force = false) {
   const { item } = player;
   if (!item || item.type === 'live' || item.type === 'catchup' || !player.started) return;
+  // Meekijkers: niets opslaan. Het staat alleen bij de gastheer in Verder kijken.
+  if (isGuest()) return;
   const now = Date.now();
   if (!force && now - player.lastSave < 15000) return;
   player.lastSave = now;
@@ -1044,6 +1046,8 @@ async function start(item, { mode = 'auto', resume = 0, together: joining = null
     // Meekijker: opnieuw laden (na een hapering) gaat via de stream van de gastheer. Kies je zelf
     // iets anders, dan kijk je niet meer mee.
     if (item.id === together.party?.item?.id) return start(together.party.item, { together: true });
+    // Het meegekeken item telt niet als eigen voortgang.
+    player.started = false;
     leaveTogether();
     toast('Je kijkt niet meer mee.');
   }
@@ -1222,7 +1226,8 @@ video.addEventListener('ended', () => {
   if (item?.type === 'live') restartLive();
   else if (item) {
     if (endedTooSoon(item)) return;
-    api('POST', `/api/progress/${item.id}`, { finished: true }).catch(() => {});
+    // Meekijkers houden geen voortgang bij: die staat alleen bij de gastheer in Verder kijken.
+    if (!isGuest()) api('POST', `/api/progress/${item.id}`, { finished: true }).catch(() => {});
     // Serie: na een korte aftelling vanzelf door naar de volgende aflevering.
     if (tvNext) startNextCountdown();
   }
@@ -1787,6 +1792,8 @@ async function joinTogether(code) {
   const clean_ = String(code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
   if (!clean_) return;
   if (isHost()) leaveTogether();
+  // Wat je zelf aan het kijken was, eerst bewaren: zodra je meekijkt, wordt er niets meer opgeslagen.
+  if (!isGuest()) saveProgress(true);
   let joined;
   try {
     joined = await api('POST', `/api/together/${clean_}/join`, { cid, native: isAppleTouch() });
@@ -1917,22 +1924,22 @@ function resetTogether() {
   renderTogether();
 }
 
-/** Zelf stoppen. De gastheer stopt het voor iedereen; een meekijker kijkt alleen verder. */
+/** Zelf stoppen met samen kijken. De gastheer kijkt verder; bij de meekijkers stopt het. */
 function leaveTogether() {
   if (!together.role) return;
   const host = isHost();
   api('POST', '/api/together/leave', { cid }).catch(() => {});
   resetTogether();
-  toast(host ? 'Samen kijken is gestopt.' : 'Je kijkt niet meer mee. Je kunt gewoon verder kijken.');
+  if (host) toast('Samen kijken is gestopt.');
 }
 
-/** De sessie is voorbij (gastheer gestopt, of de beheerder zette het uit). Een meekijker kijkt alleen verder. */
+/** De sessie is voorbij (gastheer gestopt, of de beheerder zette het uit). Dan stopt het ook bij de meekijkers. */
 function togetherEnded(reason) {
   if (!together.role) return;
-  const guest = isGuest();
-  resetTogether();
-  toast(guest && player.started ? `${reason} Je kijkt alleen verder.` : reason);
-  if (guest && !player.started) stopPlayback();
+  // Meekijker: stoppen terwijl hij nog meekijker is, zodat er geen voortgang wordt opgeslagen.
+  if (isGuest()) stopPlayback();
+  else resetTogether();
+  toast(reason);
 }
 
 /** Knoppen, badge en de regel onder de titel bijwerken. */
@@ -1962,7 +1969,8 @@ function renderTogether() {
     h('span', { class: 'grow ellipsis' }, h('b', {}, 'Samen kijken'), ` · ${who}`),
     isHost() && h('span', { class: 'pill' }, `Code ${party.code}`),
     !TV && isHost() && h('button', { class: 'btn compact', onclick: () => showTogetherCode() }, 'Link'),
-    !TV && h('button', { class: 'btn compact', onclick: () => leaveTogether() }, isHost() ? 'Stoppen' : 'Alleen verder kijken'),
+    // Gastheer: samen kijken stoppen (zelf kijkt hij verder). Meekijker: stoppen met kijken.
+    !TV && h('button', { class: 'btn compact', onclick: () => (isHost() ? leaveTogether() : stopPlayback()) }, isHost() ? 'Stoppen' : 'Stoppen met meekijken'),
   ].filter(Boolean));
 }
 

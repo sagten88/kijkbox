@@ -2,6 +2,11 @@
 
 Alle versies van Kijkbox, de nieuwste bovenaan. Dezelfde tekst zie je na een update in Kijkbox zelf.
 
+## 1.7.1 (2026-11-25)
+
+- Samen kijken: stopt de gastheer, dan stopt het ook bij de meekijkers.
+- Samen kijken: wat je meekijkt, komt niet in je eigen Verder kijken. Alleen bij de gastheer blijft het daar staan.
+
 ## 1.7.0 (2026-11-25)
 
 - Nieuw: samen kijken. Kijk met anderen in huis tegelijk hetzelfde, ieder op een eigen telefoon, laptop of tv. Wie het start, bedient de speler; de anderen kijken gelijk mee via Home of een link. Je provider ziet maar één verbinding. Staat standaard uit; de beheerder zet het aan bij Instellingen > Server.
