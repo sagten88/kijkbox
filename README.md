@@ -192,6 +192,19 @@ per apparaat onthouden. De ondertitels komen van [OpenSubtitles](https://www.ope
 Kijkbox zoekt op het TMDB-nummer dat de provider meegeeft, en anders op titel en jaar. Machinevertalingen komen
 achteraan. Een gedownloade ondertitel wordt bewaard in `subtitles/` in de datamap, dus opnieuw kijken kost geen download.
 
+## Samen kijken
+
+Kijk met anderen in huis tegelijk hetzelfde, ieder op een eigen telefoon, laptop of tv. Het staat standaard **uit**;
+de beheerder zet het aan bij **Instellingen > Server > Samen kijken**.
+
+- **Starten:** kies in de speler de knop met de twee poppetjes (op de tv: **Samen kijken** in de balk; bij live met
+  pijltje rechts). Jij bent dan de gastheer en bedient afspelen, pauze, spoelen en een andere zender of aflevering.
+- **Meekijken:** anderen zien het op **Home** onder **Samen kijken**, of openen de link (knop **Link** in de speler).
+  Meekijkers lopen gelijk met de gastheer, binnen een seconde, ook bij live.
+- **Stoppen:** de gastheer stopt het voor iedereen. Een meekijker kan **Alleen verder kijken** of de speler sluiten.
+- **Eén verbinding:** iedereen kijkt naar dezelfde stream op de server, dus je provider ziet maar één verbinding.
+- Het werkt alleen tussen accounts op deze Kijkbox, niet met mensen buiten je huis.
+
 ## Accounts
 
 - **Beheerder:** beheert bronnen en accounts.

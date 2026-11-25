@@ -46,6 +46,7 @@ const ICONS = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   list: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.8 3.3-5.5 6.5-5.5s5.7 1.7 6.5 5.5"/><path d="M15.5 4.8a3.3 3.3 0 0 1 0 6.4M18 14.8c2 .7 3.2 2.4 3.6 5.2"/>',
 };
 
 function icon(name, filled = false) {
@@ -633,7 +634,9 @@ const tvNextEp = tvBtn('tv-next', 'Volgende aflevering', () => tvPlayNext(), ico
 // Ondertitels: één knop die wisselt tussen uit, Nederlands en Engels.
 const ccButton = h('button', { class: 'icon-btn cc-btn', 'aria-label': 'Ondertitels', onclick: () => cycleSubtitles() });
 const tvCc = tvBtn('tv-cc', 'Ondertitels', () => cycleSubtitles());
-const tvControls = h('div', { class: 'tv-controls' }, tvBack30, tvBack10, tvPlay, tvFwd10, tvFwd30, tvCc, tvNextEp);
+const tvTogether = tvBtn('tv-together', 'Samen kijken', () => togetherClick(), icon('people'), h('span', {}, 'Samen kijken'));
+tvTogether.hidden = true;
+const tvControls = h('div', { class: 'tv-controls' }, tvBack30, tvBack10, tvPlay, tvFwd10, tvFwd30, tvCc, tvTogether, tvNextEp);
 // ---- Eigen speler (computer, telefoon en iPhone; de tv heeft zijn eigen balk hieronder)
 // Knoppen over het beeld: tijdbalk, spoelen (10 en 30 seconden), ondertitels, volgende aflevering,
 // beeld-in-beeld en volledig scherm. Op een aanraakscherm: één keer tikken toont of verbergt de
@@ -683,6 +686,12 @@ if (window.WebKitPlaybackTargetAvailabilityEvent) {
   });
 }
 const pcFull = pcBtn('Volledig scherm', () => toggleFull(), icon('expand'));
+// Samen kijken (zie hieronder): starten in de speler, en een badge op het beeld zolang het loopt.
+const pcTogether = pcBtn('Samen kijken', () => togetherClick(), icon('people'));
+pcTogether.classList.add('pc-together');
+pcTogether.hidden = true;
+const togetherBadge = h('div', { class: 'together-badge', hidden: true });
+const togetherBar = h('div', { class: 'together-bar', hidden: true });
 const pcLive = h('span', { class: 'pc-live' }, 'LIVE');
 const pcRipple = h('div', { class: 'pc-ripple' });
 const pcNextCard = h('div', { class: 'pc-next-card', hidden: true });
@@ -716,13 +725,13 @@ function layoutPc() {
   pc.classList.toggle('compact', compact);
   if (compact) {
     // Volume (alleen met een muis zichtbaar) staat dan bovenin, bij de andere knoppen.
-    pcTools.replaceChildren(pcVolume, pcCc, pcAirplay, pcPip);
+    pcTools.replaceChildren(pcVolume, pcCc, pcTogether, pcAirplay, pcPip);
     pcTop.replaceChildren(pcNext, h('span', { class: 'grow' }), pcTools);
     pcLine.append(pcFull);
     pcRow.replaceChildren();
   } else {
     pcTop.replaceChildren();
-    pcRow.replaceChildren(pcPlay, ...pcRowSeek, h('span', { class: 'grow' }), pcNext, pcCc, pcVolume, pcAirplay, pcPip, pcFull);
+    pcRow.replaceChildren(pcPlay, ...pcRowSeek, h('span', { class: 'grow' }), pcNext, pcCc, pcTogether, pcVolume, pcAirplay, pcPip, pcFull);
   }
 }
 if (!TV) {
@@ -731,10 +740,10 @@ if (!TV) {
 }
 const tvHint = h('div', { class: 'tv-hint' });
 const stage = h('section', { class: 'stage', 'aria-label': 'Speler' },
-  h('div', { class: 'video-wrap' }, video, TV ? null : pc, videoMsg,
+  h('div', { class: 'video-wrap' }, video, TV ? null : pc, togetherBadge, videoMsg,
     h('button', { class: 'icon-btn close-video', 'aria-label': 'Sluiten', onclick: () => stopPlayback() }, icon('close'))),
   h('div', { class: 'now-bar' },
-    h('div', { class: 'grow' }, nowTitle, nowSub, tvProgress, tvControls, tvHint),
+    h('div', { class: 'grow' }, nowTitle, nowSub, togetherBar, tvProgress, tvControls, tvHint),
     prevButton, nextButton, ccButton, favButton,
     h('button', { class: 'icon-btn', 'aria-label': 'Stoppen', onclick: () => stopPlayback() }, icon('close'))),
   stageInfo);
@@ -921,7 +930,9 @@ function stopPlayback() {
   hideMessage();
   stage.classList.remove('active');
   document.querySelector('.shell')?.classList.toggle('idle', true);
+  // Dit beëindigt op de server ook samen kijken: als gastheer voor iedereen, als meekijker alleen voor jou.
   navigator.sendBeacon('/api/play-release', new Blob([JSON.stringify({ cid })], { type: 'application/json' }));
+  resetTogether();
   markPlaying();
 }
 
@@ -1012,6 +1023,8 @@ function attach(info, seq) {
   }
   loadSubtitles();
   loadEmbeddedSubs(info, seq);
+  // Gastheer: de meekijkers kunnen nu (opnieuw) aansluiten bij deze stream.
+  if (isHost()) hostReport(true);
   video.play().catch((err) => {
     // Sommige browsers wachten op een tik voordat er geluid mag klinken. De stream is dan niet stuk.
     if (err.name === 'NotAllowedError' && seq === player.seq) {
@@ -1026,7 +1039,16 @@ function isAppleTouch() {
   return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
-async function start(item, { mode = 'auto', resume = 0 } = {}) {
+async function start(item, { mode = 'auto', resume = 0, together: joining = null } = {}) {
+  if (isGuest() && !joining) {
+    // Meekijker: opnieuw laden (na een hapering) gaat via de stream van de gastheer. Kies je zelf
+    // iets anders, dan kijk je niet meer mee.
+    if (item.id === together.party?.item?.id) return start(together.party.item, { together: true });
+    leaveTogether();
+    toast('Je kijkt niet meer mee.');
+  }
+  // Gastheer: een stream die rechtstreeks van de provider komt, kan niemand meekijken. Dan via de server.
+  if (isHost() && mode === 'auto') mode = 'remux';
   saveProgress(true);
   const seq = ++player.seq;
   if (player.item?.id !== item.id) {
@@ -1056,15 +1078,21 @@ async function start(item, { mode = 'auto', resume = 0 } = {}) {
   if (item.type === 'live') localStorage.setItem(LAST_CHANNEL_KEY, String(item.id));
   if (item.catchup) toast(`Terugkijken: ${item.name}`);
   try {
-    // Terugkijken: dezelfde zender, maar een uitzending van eerder.
-    const info = item.catchup
-      ? await api('POST', `/api/catchup/${item.id}`, { cid, start: item.catchup.start, stop: item.catchup.stop, offset: resume, mode: mode === 'transcode' ? 'transcode' : 'remux' })
-      : await api('POST', `/api/play/${item.id}`, { mode, cid, start: resume, native: isAppleTouch() });
+    // Meekijken: aansluiten bij de stream van de gastheer. Terugkijken: dezelfde zender, maar een uitzending van eerder.
+    const info = joining
+      ? await guestStream(joining)
+      : item.catchup
+        ? await api('POST', `/api/catchup/${item.id}`, { cid, start: item.catchup.start, stop: item.catchup.stop, offset: resume, mode: mode === 'transcode' ? 'transcode' : 'remux' })
+        : await api('POST', `/api/play/${item.id}`, { mode, cid, start: resume, native: isAppleTouch() });
     if (seq !== player.seq) return;
+    if (!info) return showMessage(`Wachten op ${together.party?.host.username ?? 'de gastheer'}…`);
     attach(info, seq);
   } catch (err) {
     if (seq !== player.seq) return;
-    if (mode !== 'transcode' && err.message === 'De stream kon niet worden omgezet.') {
+    if (joining && TOGETHER_GONE.test(err.message)) {
+      togetherEnded(err.message);
+      stopPlayback();
+    } else if (mode !== 'transcode' && err.message === 'De stream kon niet worden omgezet.') {
       start(item, { mode: 'transcode', resume });
     } else if (!player.retried) {
       // Bij snel zappen is de ene verbinding van de provider soms nog even bezet. Probeer het nog één keer.
@@ -1080,9 +1108,11 @@ async function start(item, { mode = 'auto', resume = 0 } = {}) {
 function updateNowBar(item) {
   nowTitle.textContent = item.season ? `S${item.season} E${item.episode} · ${clean(item.name)}` : clean(item.name);
   nowSub.textContent = item.now?.title || clean(item.group);
+  // Andere zender: niet voor meekijkers, die volgen de gastheer.
   const live = item.type === 'live';
-  prevButton.hidden = nextButton.hidden = !live;
-  prevButton.style.display = nextButton.style.display = live ? '' : 'none';
+  const zapping = live && !isGuest();
+  prevButton.hidden = nextButton.hidden = !zapping;
+  prevButton.style.display = nextButton.style.display = zapping ? '' : 'none';
   clearSubtitles();
   updateCcButtons();
   favButton.replaceChildren(icon('star', item.fav));
@@ -1091,6 +1121,7 @@ function updateNowBar(item) {
     navigator.mediaSession.metadata = new MediaMetadata({ title: item.name, artist: item.now?.title || 'Kijkbox' });
   }
   stageInfo.replaceChildren();
+  renderTogether();
   if (live) {
     api('GET', `/api/items/${item.id}`).then(({ programmes = [] }) => {
       if (player.item?.id !== item.id) return;
@@ -1108,6 +1139,7 @@ function markPlaying() {
 }
 
 function zap(direction) {
+  if (isGuest()) return guestNoControl();
   if (!liveList.length) return;
   const index = liveList.findIndex((item) => item.id === player.item?.id);
   const target = liveList[(index + direction + liveList.length) % liveList.length];
@@ -1256,6 +1288,7 @@ function playerAvailable() {
 function seekTo(target) {
   const { item } = player;
   if (!item || item.type === 'live') return;
+  if (isGuest()) return guestNoControl();
   cancelNextCountdown();
   const total = playerTotal();
   const t = Math.max(0, total ? Math.min(target, total - 2) : target);
@@ -1283,6 +1316,16 @@ function seekTo(target) {
 const seekBy = (seconds) => seekTo(playerPos() + seconds);
 
 function togglePlay() {
+  if (isGuest()) {
+    // Meekijker: alleen afspelen als de gastheer ook speelt (de browser wilde misschien eerst een tik).
+    if (video.paused && together.state?.playing && !together.state.buffering) {
+      together.blocked = false;
+      video.play().catch(() => {});
+    } else {
+      guestNoControl();
+    }
+    return;
+  }
   if (video.paused) video.play().catch(() => {});
   else video.pause();
 }
@@ -1363,7 +1406,7 @@ function updatePlayerUi() {
   const played = total ? Math.min(100, ((pcDragging ? (Number(pcScrub.value) / 1000) * total : pos) / total) * 100) : 0;
   pcScrub.style.setProperty('--played', `${played}%`);
   pcScrub.style.setProperty('--avail', `${total ? Math.max(played, Math.min(100, (playerAvailable().to / total) * 100)) : 0}%`);
-  pcNext.hidden = live || !tvNext;
+  pcNext.hidden = live || !tvNext || isGuest();
   pcBig.replaceChildren(icon(paused ? 'play' : 'pause', true));
   pcBig.classList.toggle('is-pause', !paused);
   pcBig.setAttribute('aria-label', paused ? 'Afspelen' : 'Pauze');
@@ -1442,7 +1485,8 @@ function nextLabel(next) {
 
 function startNextCountdown(seconds = 10) {
   cancelNextCountdown();
-  if (!tvNext) return;
+  // Meekijker: de gastheer bepaalt of de volgende aflevering komt.
+  if (!tvNext || isGuest()) return;
   let left = seconds;
   const tick = () => {
     if (left <= 0) return playNextNow();
@@ -1594,10 +1638,359 @@ document.addEventListener('keydown', (event) => {
     video.muted = !video.muted;
   } else if (event.key === ' ' && event.target === document.body) {
     event.preventDefault();
-    if (video.paused) video.play();
-    else video.pause();
+    togglePlay();
   }
 });
+
+// ---- Samen kijken
+// Staat standaard uit; de beheerder zet het aan bij Instellingen > Server. Werkt alleen binnen deze Kijkbox.
+// Eén tab is gastheer en bedient de speler. Meekijkers spelen dezelfde stream van de server af (geen
+// extra verbinding met de provider) en volgen afspelen, pauze, spoelen en een ander item. De gastheer
+// meldt zijn plek bij elke verandering en om de paar seconden. De meekijker telt de tijd sindsdien zelf
+// door: zit hij er meer dan SYNC_SEEK seconden naast, dan spoelt hij; bij een klein verschil speelt hij
+// even iets sneller of langzamer, zodat je er niets van merkt.
+// Bij live heeft elke speler een eigen tijdlijn. Daarom meldt de gastheer daar het segmentnummer en de
+// plek daarin; die zijn voor iedereen gelijk.
+
+const together = { role: null, code: null, party: null, events: null, state: null, receivedAt: 0, streamVersion: -1, blocked: false };
+const isGuest = () => together.role === 'guest';
+const isHost = () => together.role === 'host';
+const TOGETHER_GONE = /bestaat niet meer|staat uit|Alleen de gastheer/;
+const TOGETHER_REPORT_MS = 3000;
+const SYNC_MS = 500;
+const SYNC_SEEK = 1;
+const SYNC_NUDGE = 0.2;
+// Zonder segmentnummer (ingebouwde speler van Apple, live) is de plek minder precies.
+const SYNC_ROUGH = 4;
+
+const togetherLink = (code) => `${location.origin}${location.pathname}#/samen/${code}`;
+const memberName = (m) => (m.device && m.device !== 'onbekend' ? `${m.username} (${m.device})` : m.username);
+
+function togetherItemBody(item) {
+  const body = { itemId: item.id };
+  if (item.catchup) Object.assign(body, { catchup: item.catchup, name: item.name, group: item.group });
+  return body;
+}
+
+function guestNoControl() {
+  toast(`${together.party?.host.username ?? 'De gastheer'} bedient de speler. Jij kijkt mee.`);
+}
+
+/** De knop in de speler: samen kijken starten, of (als gastheer) de code laten zien. */
+async function togetherClick() {
+  if (isHost()) {
+    if (TV) return leaveTogether();
+    return showTogetherCode();
+  }
+  if (!player.item) return;
+  try {
+    const party = await api('POST', '/api/together', { cid, ...togetherItemBody(player.item) });
+    together.role = 'host';
+    together.code = party.code;
+    together.party = party;
+    together.streamVersion = party.streamVersion;
+    openTogetherEvents();
+    // Een stream die rechtstreeks van de provider komt, kan niemand meekijken: dan via de server, vanaf hier.
+    if (player.mode === 'direct') start(player.item, { mode: 'remux', resume: playerPos() });
+    else hostReport(true);
+    renderTogether();
+    toast(`Samen kijken staat aan. Anderen in huis zien het op Home${TV ? '' : ', of gebruiken de link'} (code ${party.code}).`);
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/** Venster met de uitnodigingslink, om door te sturen naar iemand in huis. */
+function showTogetherCode() {
+  const link = h('code', {}, togetherLink(together.code));
+  const copy = h('button', {
+    class: 'btn compact', type: 'button',
+    onclick: () => {
+      // Werkt ook zonder https: de tekst selecteren en de browser laten kopiëren.
+      const range = document.createRange();
+      range.selectNodeContents(link);
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      toast(document.execCommand('copy') ? 'Link gekopieerd.' : 'Geselecteerd: kopieer het met Ctrl+C.');
+    },
+  }, 'Kopiëren');
+  const done = h('button', { class: 'btn primary', type: 'button', onclick: () => overlay.remove() }, 'Klaar');
+  const overlay = h('div', { class: 'modal-backdrop', onclick: (e) => { if (e.target === overlay) overlay.remove(); } },
+    h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'together-title' },
+      h('h2', { id: 'together-title' }, 'Samen kijken'),
+      h('p', {}, 'Anderen in huis zien het op Home onder "Samen kijken". Of stuur ze deze link:'),
+      h('div', { class: 'temp-password together-link' }, link),
+      h('p', { class: 'muted small' }, `Code ${together.code}. Alleen accounts op deze Kijkbox kunnen meekijken. Jij bedient de speler; de anderen kijken gelijk mee.`),
+      h('div', { class: 'modal-actions' }, copy, done)));
+  document.body.append(overlay);
+  done.focus();
+}
+
+// ---- Gastheer: melden wat de speler doet
+
+function liveDetails() {
+  return player.hls?.levels?.[Math.max(0, player.hls.currentLevel)]?.details ?? null;
+}
+const fragmentAt = (time) => liveDetails()?.fragments?.find((f) => time >= f.start && time < f.start + f.duration) ?? null;
+const fragmentBySn = (sn) => liveDetails()?.fragments?.find((f) => f.sn === sn) ?? null;
+
+function hostState() {
+  const live = player.item.type === 'live';
+  const state_ = {
+    // Tijdens bufferen bij live staat de video even op pauze; dat is geen echte pauze.
+    playing: !video.paused || Boolean(player.rebufferTimer),
+    buffering: Boolean(player.rebufferTimer) || !player.started || (!video.paused && video.readyState < 3),
+    position: playerPos(),
+  };
+  if (live) {
+    const frag = fragmentAt(video.currentTime);
+    if (frag) Object.assign(state_, { sn: frag.sn, offset: video.currentTime - frag.start });
+    state_.behind = behindLive();
+  }
+  return state_;
+}
+
+function hostReport(withItem = false) {
+  if (!isHost() || !player.item) return;
+  // Tijdens het laden van iets nieuws niets melden: de server zou de nieuwe stream dan al doorgeven
+  // met het oude item. Zodra de stream er is, meldt attach() het item en de stream samen.
+  if (!withItem && !player.started) return;
+  const code = together.code;
+  const body = { cid, state: hostState() };
+  if (withItem) body.item = togetherItemBody(player.item);
+  api('POST', `/api/together/${code}/report`, body)
+    .then((party) => {
+      if (together.code !== code) return;
+      together.party = party;
+      renderTogether();
+    })
+    .catch((err) => {
+      if (together.code === code && TOGETHER_GONE.test(err.message)) togetherEnded(err.message);
+    });
+}
+
+let reportSoon = null;
+for (const name of ['play', 'pause', 'seeked', 'waiting', 'playing', 'ratechange']) {
+  video.addEventListener(name, () => {
+    if (!isHost()) return;
+    clearTimeout(reportSoon);
+    reportSoon = setTimeout(() => hostReport(), 120);
+  });
+}
+setInterval(() => { if (isHost()) hostReport(); }, TOGETHER_REPORT_MS);
+
+// ---- Meekijker
+
+async function joinTogether(code) {
+  if (!state.together) return toast('Samen kijken staat uit. De beheerder kan het aanzetten bij Instellingen.');
+  const clean_ = String(code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  if (!clean_) return;
+  if (isHost()) leaveTogether();
+  let joined;
+  try {
+    joined = await api('POST', `/api/together/${clean_}/join`, { cid, native: isAppleTouch() });
+  } catch (err) {
+    return toast(err.message);
+  }
+  Object.assign(together, { role: 'guest', code: clean_, blocked: false });
+  openTogetherEvents();
+  start(joined.party.item, { together: joined });
+  renderTogether();
+  toast(`Je kijkt mee met ${joined.party.host.username}.`);
+}
+
+/** Bij `true` opnieuw aansluiten bij de gastheer; anders het antwoord dat er al was. Geeft de stream (of null). */
+async function guestStream(joining) {
+  const { party, stream } = joining === true
+    ? await api('POST', `/api/together/${together.code}/join`, { cid, native: isAppleTouch() })
+    : joining;
+  applyParty(party);
+  return stream;
+}
+
+function setTogetherState(s) {
+  together.state = s;
+  together.receivedAt = Date.now();
+  if (isGuest()) guestSync();
+}
+
+function applyParty(party) {
+  together.party = party;
+  together.streamVersion = party.streamVersion;
+  setTogetherState(party.state);
+}
+
+function onTogetherParty(party) {
+  const before = together.party;
+  const changed = party.streamVersion !== together.streamVersion;
+  applyParty(party);
+  const item = player.item;
+  if (isGuest() && !changed && item && (party.item.id !== item.id || party.item.type !== item.type || party.item.name !== item.name)) {
+    // Zelfde stream, maar de titel kwam later binnen (bijvoorbeeld bij terugkijken).
+    player.item = party.item;
+    updateNowBar(party.item);
+  }
+  if (isGuest() && changed) {
+    if (party.ready) {
+      start(party.item, { together: true });
+    } else {
+      // De gastheer start iets nieuws (of spoelt ver weg). Even wachten tot die stream klaar is.
+      player.seq += 1;
+      teardownEngine();
+      player.started = false;
+      player.item = party.item;
+      updateNowBar(party.item);
+      showMessage(`Wachten op ${party.host.username}…`);
+    }
+  }
+  if (isHost() && before) {
+    const names = (p) => p.members.map(memberName);
+    const old = names(before);
+    for (const name of names(party)) if (!old.includes(name)) toast(`${name} kijkt mee.`);
+    for (const name of old) if (!names(party).includes(name)) toast(`${name} kijkt niet meer mee.`);
+  }
+  renderTogether();
+}
+
+/** Waar de meekijker nu zou moeten zijn (tijd in zijn eigen video), of null als dat niet te zeggen is. */
+function guestTarget(s, hold) {
+  const ahead = hold ? 0 : (s.elapsed + Date.now() - together.receivedAt) / 1000;
+  if (player.item?.type !== 'live') return { time: s.position + ahead - player.base, tolerance: SYNC_SEEK };
+  const frag = s.sn !== null && s.sn !== undefined ? fragmentBySn(s.sn) : null;
+  if (frag) return { time: frag.start + s.offset + ahead, tolerance: SYNC_SEEK };
+  const { seekable } = video;
+  if (s.behind !== null && s.behind !== undefined && seekable.length) {
+    return { time: seekable.end(seekable.length - 1) - s.behind, tolerance: SYNC_ROUGH };
+  }
+  return null;
+}
+
+function guestSync() {
+  if (!isGuest() || !player.started || !together.state || video.seeking || player.rebufferTimer) return;
+  const s = together.state;
+  const hold = !s.playing || s.buffering;
+  if (hold && !video.paused) video.pause();
+  if (!hold && video.paused && !together.blocked) {
+    video.play().catch((err) => {
+      // De browser wil eerst een tik. De grote afspeelknop staat dan in beeld.
+      if (err.name === 'NotAllowedError') together.blocked = true;
+    });
+  }
+  const target = guestTarget(s, hold);
+  if (!target) return;
+  const { seekable } = video;
+  if (!seekable.length) return;
+  const time = Math.max(seekable.start(0), Math.min(seekable.end(seekable.length - 1) - 0.5, target.time));
+  const diff = time - video.currentTime;
+  if (Math.abs(diff) > target.tolerance || (hold && Math.abs(diff) > 0.3)) {
+    video.playbackRate = 1;
+    video.currentTime = time;
+  } else if (!hold && target.tolerance === SYNC_SEEK && Math.abs(diff) > SYNC_NUDGE) {
+    video.playbackRate = diff > 0 ? 1.08 : 0.93;
+  } else if (video.playbackRate !== 1) {
+    video.playbackRate = 1;
+  }
+}
+setInterval(guestSync, SYNC_MS);
+
+// ---- Voor iedereen: berichten van de server en stoppen
+
+function openTogetherEvents() {
+  together.events?.close();
+  const { code } = together;
+  const events = new EventSource(`/api/together/${code}/events?cid=${cid}`);
+  together.events = events;
+  const mine = () => together.code === code && together.events === events;
+  events.addEventListener('party', (e) => { if (mine()) onTogetherParty(JSON.parse(e.data)); });
+  events.addEventListener('state', (e) => { if (mine()) setTogetherState(JSON.parse(e.data).state); });
+  events.addEventListener('end', (e) => { if (mine()) togetherEnded(JSON.parse(e.data).reason); });
+  // Kent de server de sessie niet meer, dan sluit de browser de verbinding. Anders probeert hij het zelf opnieuw.
+  events.addEventListener('error', () => { if (mine() && events.readyState === EventSource.CLOSED) togetherEnded('Samen kijken is gestopt.'); });
+}
+
+function resetTogether() {
+  together.events?.close();
+  clearTimeout(reportSoon);
+  Object.assign(together, { role: null, code: null, party: null, events: null, state: null, streamVersion: -1, blocked: false });
+  video.playbackRate = 1;
+  renderTogether();
+}
+
+/** Zelf stoppen. De gastheer stopt het voor iedereen; een meekijker kijkt alleen verder. */
+function leaveTogether() {
+  if (!together.role) return;
+  const host = isHost();
+  api('POST', '/api/together/leave', { cid }).catch(() => {});
+  resetTogether();
+  toast(host ? 'Samen kijken is gestopt.' : 'Je kijkt niet meer mee. Je kunt gewoon verder kijken.');
+}
+
+/** De sessie is voorbij (gastheer gestopt, of de beheerder zette het uit). Een meekijker kijkt alleen verder. */
+function togetherEnded(reason) {
+  if (!together.role) return;
+  const guest = isGuest();
+  resetTogether();
+  toast(guest && player.started ? `${reason} Je kijkt alleen verder.` : reason);
+  if (guest && !player.started) stopPlayback();
+}
+
+/** Knoppen, badge en de regel onder de titel bijwerken. */
+function renderTogether() {
+  const party = together.role ? together.party : null;
+  const canStart = Boolean(state.together) && !isGuest() && Boolean(player.item);
+  pcTogether.hidden = !canStart;
+  pcTogether.classList.toggle('on', isHost());
+  pcTogether.title = isHost() ? 'Samen kijken: link en code' : 'Samen kijken';
+  tvTogether.hidden = !canStart;
+  tvTogether.replaceChildren(icon('people'), h('span', {}, isHost() ? 'Stop samen kijken' : 'Samen kijken'));
+  togetherBar.hidden = !party;
+  togetherBadge.hidden = !party;
+  if (TV && player.item) tvUpdateTime();
+  // Alleen opnieuw tekenen als er iets veranderde, anders gaat een klik op een knop soms verloren.
+  const key = party ? JSON.stringify([together.role, party.code, party.host, party.members]) : '';
+  if (key === togetherBar.dataset.key) return;
+  togetherBar.dataset.key = key;
+  if (!party) return;
+  const count = party.members.length + 1;
+  togetherBadge.replaceChildren(icon('people'), h('span', {}, isHost() ? `Samen kijken · ${count}` : `Met ${party.host.username}`));
+  const who = isHost()
+    ? (party.members.length ? `kijkt mee: ${party.members.map(memberName).join(', ')}` : 'nog niemand kijkt mee')
+    : `je kijkt mee met ${memberName(party.host)}${party.members.length > 1 ? ` en ${party.members.length - 1} ander${party.members.length > 2 ? 'en' : ''}` : ''}`;
+  togetherBar.replaceChildren(...[
+    icon('people'),
+    h('span', { class: 'grow ellipsis' }, h('b', {}, 'Samen kijken'), ` · ${who}`),
+    isHost() && h('span', { class: 'pill' }, `Code ${party.code}`),
+    !TV && isHost() && h('button', { class: 'btn compact', onclick: () => showTogetherCode() }, 'Link'),
+    !TV && h('button', { class: 'btn compact', onclick: () => leaveTogether() }, isHost() ? 'Stoppen' : 'Alleen verder kijken'),
+  ].filter(Boolean));
+}
+
+// ---- Home: wie kijkt er nu samen? Om de paar seconden bijgewerkt zolang Home open staat.
+async function togetherShelf(slot) {
+  if (!state.together) return;
+  let data;
+  try {
+    data = await api('GET', `/api/together?cid=${cid}`);
+  } catch {
+    return;
+  }
+  const list = (data.parties ?? []).filter((p) => !p.mine && p.code !== together.code);
+  const key = list.map((p) => `${p.code}:${p.item.id}:${p.count}`).join(',');
+  // Alleen opnieuw tekenen als er iets veranderde, anders verspringt op de tv de selectie.
+  if (!slot.isConnected || slot.dataset.key === key) return;
+  slot.dataset.key = key;
+  const focused = slot.contains(document.activeElement);
+  slot.replaceChildren(...(list.length ? [shelf('Samen kijken', h('div', { class: 'shelf-row channels' }, list.map(togetherTile)))] : []));
+  if (TV && focused) tvFocusDefault();
+}
+
+function togetherTile(p) {
+  return h('button', { class: 'tile together-tile', 'aria-label': `Meekijken met ${p.host.username}: ${clean(p.item.name)}`, onclick: () => joinTogether(p.code) },
+    h('div', { class: 'tile-head' }, logoBox(p.item), h('span', { class: 'pill' }, icon('people'), 'Meekijken')),
+    h('div', { class: 'name ellipsis' }, clean(p.item.name)),
+    h('div', { class: 'sub ellipsis' }, `${p.host.username} kijkt${p.count > 1 ? ` · ${p.count} kijkers` : ''}`));
+}
 
 async function toggleFav(item, button) {
   if (!item) return;
@@ -2004,6 +2397,14 @@ async function homeView(container) {
     page.append(news);
     loadWhatsNew(news);
   }
+  // Samen kijken: wie in huis nu iets kijkt waar je bij kunt aansluiten.
+  const togetherSlot = h('div', { class: 'together-slot' });
+  page.append(togetherSlot);
+  let togetherTimer = null;
+  if (state.together) {
+    togetherShelf(togetherSlot);
+    togetherTimer = setInterval(() => togetherShelf(togetherSlot), 8000);
+  }
   if (continuing.length) page.append(shelf('Verder kijken', h('div', { class: 'shelf-row' }, continuing.map((item) => posterCard(item, { resume: true })))));
   if (channels.length) {
     page.append(shelf('Zenders', h('div', { class: 'shelf-row channels' },
@@ -2018,6 +2419,7 @@ async function homeView(container) {
         h('a', { class: 'btn', href: '#/series' }, 'Naar Series'))));
   }
   container.replaceChildren(page);
+  return () => clearInterval(togetherTimer);
 }
 
 // Films en Series worden bewaard als je een titel opent. Ga je terug, dan sta je weer op dezelfde
@@ -2872,7 +3274,7 @@ const SETTINGS_TABS = [
   ['status', 'Status', true, () => [statusPanel()], () => !TV],
   ['bronnen', 'Bronnen', true, () => [sourcesPanel()]],
   ['gebruikers', 'Gebruikers', true, () => [usersPanel()]],
-  ['server', 'Server', true, () => [updatesPanel(), backupsPanel(), networkPanel(), subtitlesPanel(), downloadsPanel()], () => !TV],
+  ['server', 'Server', true, () => [updatesPanel(), backupsPanel(), networkPanel(), subtitlesPanel(), downloadsPanel(), togetherPanel()], () => !TV],
 ];
 
 function settingsView(container, tab = '') {
@@ -3170,6 +3572,25 @@ function downloadsPanel() {
     h('p', { class: 'muted small' }, 'De server maakt er eerst een mp4 van die op telefoons en laptops afspeelt. Eén tegelijk; tijdens het klaarzetten gebruikt de server de verbinding met je provider. Klaargezette bestanden worden na een dag opgeruimd.'));
 }
 
+/** Beheerder: samen kijken aan of uit (standaard uit). */
+function togetherPanel() {
+  const box = h('input', { type: 'checkbox', checked: Boolean(state.together) });
+  box.addEventListener('change', async () => {
+    try {
+      const saved = await api('POST', '/api/together-settings', { enabled: box.checked });
+      state.together = saved.enabled;
+      renderTogether();
+      toast(saved.enabled ? 'Samen kijken staat aan.' : 'Samen kijken staat uit.');
+    } catch (err) {
+      box.checked = !box.checked;
+      toast(err.message);
+    }
+  });
+  return h('section', { class: 'panel' }, h('h2', {}, 'Samen kijken'),
+    h('label', { class: 'check' }, box, h('span', { class: 'grow' }, 'Accounts op deze Kijkbox laten samen kijken')),
+    h('p', { class: 'muted small' }, 'Eén persoon start het in de speler (de knop met de twee poppetjes) en bedient afspelen, pauze en spoelen. Anderen in huis zien het op Home en kijken gelijk mee op hun eigen telefoon, laptop of tv. Iedereen kijkt naar dezelfde stream van de server, dus je provider ziet maar één verbinding. Werkt alleen binnen deze Kijkbox.'));
+}
+
 function subtitlesPanel() {
   const status = h('p', { class: 'muted small' }, 'Laden…');
   const form = h('form', {
@@ -3271,7 +3692,12 @@ async function route() {
     else if (hash === '#/series') stop = await posterView(holder, 'series', { returning });
     else if (hash === '#/instellingen' || hash.startsWith('#/instellingen/')) stop = settingsView(holder, hash.slice(15));
     else if (hash.startsWith('#/item/')) stop = await detailView(holder, Number(hash.slice(7)));
-    else location.hash = '#/home';
+    else if (hash.startsWith('#/samen/')) {
+      // Uitnodigingslink voor samen kijken: meekijken en verder op Home.
+      const code = hash.slice(8);
+      location.replace('#/home');
+      joinTogether(code);
+    } else location.hash = '#/home';
     if (mine === routeToken && typeof stop === 'function') cleanup = stop;
     else if (typeof stop === 'function') stop();
     if (TV && mine === routeToken && !stage.classList.contains('active')) tvFocusDefault();
@@ -3365,7 +3791,8 @@ let tvNext = null; // de volgende aflevering, als die er is
 let tvNextShown = false;
 let tvScrub = null; // spoelen via de tijdbalk: { pos, last, reps }
 
-const tvControlList = () => [tvBack30, tvBack10, tvPlay, tvFwd10, tvFwd30, tvCc, tvNextEp].filter((b) => !b.hidden);
+const tvControlList = () => [tvBack30, tvBack10, tvPlay, tvFwd10, tvFwd30, tvCc, tvTogether, tvNextEp].filter((b) => !b.hidden);
+const TV_SEEK_BUTTONS = () => [tvBack30, tvBack10, tvFwd10, tvFwd30];
 const tvBarOpen = () => stage.classList.contains('show-bar');
 const tvInControls = () => tvControls.contains(document.activeElement);
 
@@ -3381,14 +3808,14 @@ function tvShowBar(focus) {
   clearTimeout(tvBarTimer);
   tvUpdateTime();
   if (!video.paused && !tvNextShown && !tvScrub) tvBarTimer = setTimeout(tvHideBar, 5000);
-  if (player.item?.type === 'live') return;
+  // Live heeft alleen de knop Samen kijken; die krijgt pas de focus als je er met rechts naartoe gaat.
+  if (player.item?.type === 'live' && !focus) return;
   if (focus) focus.focus({ preventScroll: true });
   else if (!tvInControls()) tvPlay.focus({ preventScroll: true });
 }
 
 function tvTogglePlay() {
-  if (video.paused) video.play().catch(() => {});
-  else video.pause();
+  togglePlay();
 }
 
 /** Het einde is pas bekend als de hele aflevering binnen is; bij omzetten groeit de duur nog. */
@@ -3405,7 +3832,7 @@ function tvNearEnd() {
 }
 
 function tvCheckNext() {
-  const near = tvNearEnd();
+  const near = tvNearEnd() && !isGuest();
   if (near && !tvNextShown) {
     tvNextShown = true;
     tvShowBar(tvNextEp);
@@ -3444,9 +3871,15 @@ function tvUpdateTime() {
   if (!item) return;
   const live = item.type === 'live';
   tvProgress.hidden = live;
-  tvControls.hidden = live;
-  if (live) {
-    tvHint.textContent = 'Omhoog/omlaag: andere zender · OK: pauze · Terug: stoppen';
+  // Live: geen spoelknoppen, alleen (als die er is) de knop Samen kijken. Meekijkers spoelen niet zelf.
+  tvPlay.hidden = live;
+  for (const b of TV_SEEK_BUTTONS()) b.hidden = live || isGuest();
+  tvControls.hidden = live && tvTogether.hidden;
+  if (isGuest()) {
+    tvHint.textContent = `Je kijkt mee met ${together.party?.host.username ?? 'de gastheer'} · Terug: stoppen`;
+    if (live) return;
+  } else if (live) {
+    tvHint.textContent = `Omhoog/omlaag: andere zender · OK: pauze${tvTogether.hidden ? '' : ' · Rechts: samen kijken'} · Terug: stoppen`;
     return;
   }
   const position = playerPos();
@@ -3464,7 +3897,7 @@ function tvUpdateTime() {
   tvPlay.replaceChildren(icon(video.paused ? 'play' : 'pause', video.paused));
   tvPlay.setAttribute('aria-label', video.paused ? 'Afspelen' : 'Pauze');
   tvNextEp.hidden = !tvNextShown;
-  tvHint.textContent = 'Terug: stoppen';
+  if (!isGuest()) tvHint.textContent = 'Terug: stoppen';
 }
 
 function tvSeek(seconds) {
@@ -3475,7 +3908,7 @@ function tvSeek(seconds) {
 // Pijltje omhoog vanaf de knoppen kiest de tijdbalk. Links/rechts schuift een markering (eerst per
 // 10 seconden, ingedrukt houden gaat steeds sneller), OK spoelt daarheen, omlaag of Terug breekt af.
 // Kan alleen als de lengte bekend is, net als de tijdbalk op de telefoon.
-const tvCanScrub = () => player.item && player.item.type !== 'live' && playerTotal() > 0;
+const tvCanScrub = () => player.item && player.item.type !== 'live' && playerTotal() > 0 && !isGuest();
 const tvScrubbing = () => Boolean(tvScrub) && document.activeElement === tvScrubEl;
 
 function tvScrubStart() {
@@ -3539,6 +3972,7 @@ function tvPlayerKey(key) {
       return true;
     case 'ArrowLeft':
       if (live) tvShowBar();
+      else if (isGuest() && !tvInControls()) tvShowBar();
       else if (tvBarOpen() && tvInControls()) moveFocus(-1);
       else {
         tvSeek(-10);
@@ -3546,7 +3980,8 @@ function tvPlayerKey(key) {
       }
       return true;
     case 'ArrowRight':
-      if (live) tvShowBar();
+      if (live) tvShowBar(tvBarOpen() && !tvTogether.hidden ? tvTogether : undefined);
+      else if (isGuest() && !tvInControls()) tvShowBar();
       else if (tvBarOpen() && tvInControls()) moveFocus(1);
       else {
         tvSeek(10);
@@ -3563,6 +3998,7 @@ function tvPlayerKey(key) {
       return true;
     case 'Enter': case ' ':
       if (retry) retry.click();
+      else if (live && tvBarOpen() && document.activeElement === tvTogether) tvTogether.click();
       else if (!live && tvBarOpen() && tvInControls()) {
         const focused = document.activeElement;
         focused.click();
@@ -3577,11 +4013,13 @@ function tvPlayerKey(key) {
       tvShowBar();
       return true;
     case 'Play': case 'MediaPlay':
-      video.play().catch(() => {});
+      if (isGuest()) togglePlay();
+      else video.play().catch(() => {});
       tvShowBar();
       return true;
     case 'Pause': case 'MediaPause':
-      video.pause();
+      if (isGuest()) guestNoControl();
+      else video.pause();
       tvShowBar();
       return true;
     case 'Info':
@@ -3705,7 +4143,7 @@ function renderApp() {
   // Na inloggen weten we nog niet of ondertitels zijn ingesteld; dat staat in /api/state.
   if (state.user && state.subtitles === undefined) {
     state.subtitles = false;
-    fetch('/api/state').then((r) => r.json()).then((s) => { state.subtitles = Boolean(s.subtitles); state.downloads = Boolean(s.downloads); updateCcButtons(); }).catch(() => {});
+    fetch('/api/state').then((r) => r.json()).then((s) => { state.subtitles = Boolean(s.subtitles); state.downloads = Boolean(s.downloads); state.together = Boolean(s.together); updateCcButtons(); renderTogether(); }).catch(() => {});
   }
   if (state.needsSetup) return app.replaceChildren(setupScreen());
   if (!state.user) return app.replaceChildren(TV ? (state.profiles ? profileScreen() : pairScreen()) : loginScreen());
@@ -3730,6 +4168,7 @@ state.profiles = initial.profiles ?? 0;
 state.user = initial.user;
 state.subtitles = initial.user ? Boolean(initial.subtitles) : undefined;
 state.downloads = Boolean(initial.downloads);
+state.together = Boolean(initial.together);
 state.needsSetup = initial.needsSetup;
 renderApp();
 

@@ -2,8 +2,9 @@
 
 Alle versies van Kijkbox, de nieuwste bovenaan. Dezelfde tekst zie je na een update in Kijkbox zelf.
 
-## 1.7.0 (2026-11-20)
+## 1.7.0 (2026-11-25)
 
+- Nieuw: samen kijken. Kijk met anderen in huis tegelijk hetzelfde, ieder op een eigen telefoon, laptop of tv. Wie het start, bedient de speler; de anderen kijken gelijk mee via Home of een link. Je provider ziet maar één verbinding. Staat standaard uit; de beheerder zet het aan bij Instellingen > Server.
 - Kijkbox is openbaar: iedereen kan het installeren, zonder toegang aan te vragen. Het installatiescript staat nu in deze repository.
 - Updates komen voortaan via https uit de openbare repository. Bestaande servers stappen vanzelf over; alleen versies met een geldige handtekening worden geïnstalleerd, zoals altijd.
 - Docker: kant-en-klaar image voor amd64 en arm64 (ghcr.io/sagten88/kijkbox), een docker-compose.yml voor thuis en een variant met https via Caddy.

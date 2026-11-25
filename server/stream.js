@@ -475,6 +475,11 @@ async function startFfmpeg(item, { cid, transcode, live, start, native, exact = 
   }
   session.viewers.set(cid, Date.now());
   viewers.set(cid, session.id);
+  return readySession(session, cid, native);
+}
+
+/** Wacht tot de sessie kan spelen en geeft de gegevens voor de speler van deze browsertab. */
+async function readySession(session, cid, native) {
   try {
     await waitUntilReady(session, cid);
     if (native) await waitForSegments(session, NATIVE_SEGMENTS, cid);
@@ -482,11 +487,31 @@ async function startFfmpeg(item, { cid, transcode, live, start, native, exact = 
     releaseViewer(cid);
     throw err;
   }
+  const { start } = session;
   const base = exactStart(session) ? await exactBase(session) : start;
   return {
     kind: 'hls', url: `/s/t/${session.id}/${cid}/index.m3u8`, base, mode: session.transcode ? 'transcode' : 'remux',
     duration: session.duration && session.duration > start ? Math.round(session.duration) : undefined,
   };
+}
+
+/** De ffmpeg-sessie waar deze browsertab nu naar kijkt, of null (bijvoorbeeld bij een doorgegeven stream). */
+export function sessionOfViewer(cid) {
+  const session = sessions.get(viewers.get(cid));
+  return session && !session.closed && !session.failed ? session.id : null;
+}
+
+/**
+ * Samen kijken: een browsertab kijkt mee met een sessie die al loopt. Dezelfde segmenten en
+ * dezelfde tijdlijn, en geen extra verbinding met de provider.
+ */
+export async function joinSession(sid, cid, { native = false } = {}) {
+  const session = sessions.get(sid);
+  if (!session || session.closed || session.failed) throw new UpstreamError('De stream van de gastheer is gestopt.');
+  if (viewers.get(cid) !== sid) releaseViewer(cid);
+  session.viewers.set(cid, Date.now());
+  viewers.set(cid, session.id);
+  return readySession(session, cid, native && session.live);
 }
 
 /**

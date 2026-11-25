@@ -787,3 +787,25 @@ html, body { overflow-x: hidden; }
 @media (max-width: 699px) { .dl-card { bottom: calc(76px + var(--safe-b)); } }
 .row .row-dl { flex: none; margin-right: 4px; }
 .dl-card a.btn { text-decoration: none; }
+
+/* ---- Samen kijken */
+.together-bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 13px; color: var(--muted); min-width: 0; }
+.together-bar[hidden] { display: none; }
+.together-bar > .icon { width: 16px; height: 16px; flex: none; color: var(--accent); }
+.together-bar b { color: var(--text); font-weight: 650; }
+.together-bar .pill { flex: none; color: var(--accent); letter-spacing: .04em; }
+.together-bar .btn { flex: none; }
+.pc-btn.pc-together.on { color: var(--accent); }
+/* Op het beeld, linksboven: dat je samen kijkt. Zonder klikken, zodat hij nergens in de weg zit. */
+.together-badge { position: absolute; z-index: 2; top: calc(10px + var(--safe-t)); left: calc(10px + var(--safe-l)); pointer-events: none;
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  background: rgba(0, 0, 0, .6); color: #fff; font-size: 12px; font-weight: 700; }
+.together-badge[hidden] { display: none; }
+.together-badge .icon { width: 14px; height: 14px; color: var(--accent); }
+.together-tile .pill { display: inline-flex; align-items: center; gap: 4px; background: var(--accent); color: var(--accent-ink); }
+.together-tile .pill .icon { width: 13px; height: 13px; }
+@media (max-width: 699px) {
+  .together-bar { flex-wrap: wrap; }
+  .together-bar > .grow { flex-basis: calc(100% - 30px); }
+}
+.modal .together-link code { font-size: 14px; word-break: break-all; letter-spacing: 0; }

@@ -87,3 +87,7 @@ body.tv .posters { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
 body.tv .detail { grid-template-columns: 170px minmax(0, 1fr); }
 body.tv .guide { max-height: calc(100 * var(--vh) - 110px); }
 body.tv .toast { bottom: 24px; }
+
+/* Samen kijken */
+body.tv .together-bar { font-size: 15px; margin-top: 6px; }
+body.tv .together-badge { top: 24px; left: 32px; font-size: 15px; padding: 6px 14px; }

@@ -485,3 +485,68 @@ test('firstVideoPts leest de eerste beeldtijd uit een MPEG-TS-segment', () => {
   assert.equal(firstVideoPts(Buffer.concat([audio, pkt])), 8.5);
   assert.equal(firstVideoPts(Buffer.alloc(376)), null);
 });
+
+const together = await import('../server/together.js');
+
+test('samen kijken staat standaard uit en is dan niet te gebruiken', () => {
+  assert.equal(together.togetherSettings().enabled, false);
+  const user = { id: 1, username: 'sem' };
+  assert.throws(() => together.createParty({ user, cid: 'host-tab-0001', device: 'Mac', item: { id: 1, name: 'NPO 1' } }), together.TogetherError);
+});
+
+test('samen kijken: gastheer, meekijkers en stoppen', () => {
+  assert.equal(together.saveTogetherSettings({ enabled: true }).enabled, true);
+  const host = { id: 1, username: 'sem' };
+  const guest = { id: 2, username: 'lisa' };
+  const party = together.createParty({ user: host, cid: 'host-tab-0001', device: 'TV-app', item: { id: 7, name: 'Film' } });
+  assert.match(party.code, /^[A-HJ-NP-Z2-9]{6}$/);
+  assert.equal(party.ready, false, 'zonder stream op de server is er nog niets om mee te kijken');
+  // Nog een keer starten in dezelfde tab: dezelfde sessie, met het nieuwe item.
+  assert.equal(together.createParty({ user: host, cid: 'host-tab-0001', device: 'TV-app', item: { id: 8, name: 'Serie' } }).code, party.code);
+
+  const joined = together.joinParty(party.code.toLowerCase(), { user: guest, cid: 'guest-tab-001', device: 'iPhone' });
+  assert.equal(joined.sid, null);
+  assert.deepEqual(joined.party.members, [{ username: 'lisa', device: 'iPhone' }]);
+  assert.equal(joined.party.item.id, 8);
+  assert.throws(() => together.joinParty(party.code, { user: host, cid: 'host-tab-0001', device: 'TV-app' }), /zelf de gastheer/);
+  assert.throws(() => together.joinParty('ZZZZZZ', { user: guest, cid: 'guest-tab-001', device: 'iPhone' }), /bestaat niet meer/);
+
+  // Alleen de gastheer meldt de stand; vreemde waarden worden genegeerd of begrensd.
+  assert.throws(() => together.hostReport(party.code, 'guest-tab-001', { state: { playing: true } }), /Alleen de gastheer/);
+  const view = together.hostReport(party.code, 'host-tab-0001', { state: { playing: true, position: 125.5, sn: 12, offset: 1.5, extra: 'x' } });
+  assert.equal(view.state.playing, true);
+  assert.equal(view.state.position, 125.5);
+  assert.equal(view.state.sn, 12);
+  assert.equal(view.state.extra, undefined);
+  assert.ok(view.state.elapsed >= 0 && view.state.elapsed < 1000);
+
+  const list = together.listParties();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].count, 2);
+  assert.equal(list[0].hostCid, 'host-tab-0001');
+
+  // Meekijker gaat weg: de sessie blijft. Gastheer stopt: de sessie is voorbij.
+  together.leaveParty('guest-tab-001');
+  assert.equal(together.listParties()[0].count, 1);
+  together.leaveParty('host-tab-0001');
+  assert.equal(together.listParties().length, 0);
+});
+
+test('samen kijken: één sessie per tab, en uitzetten stopt alles', () => {
+  const sem = { id: 1, username: 'sem' };
+  const a = together.createParty({ user: sem, cid: 'tab-aaaaaaaa', device: 'Mac', item: { id: 1, name: 'A' } });
+  const b = together.createParty({ user: sem, cid: 'tab-bbbbbbbb', device: 'Mac', item: { id: 2, name: 'B' } });
+  // Tab A sluit aan bij B: dan stopt zijn eigen sessie.
+  together.joinParty(b.code, { user: sem, cid: 'tab-aaaaaaaa', device: 'Mac' });
+  assert.deepEqual(together.listParties().map((p) => p.code), [b.code]);
+  assert.notEqual(a.code, b.code);
+  together.saveTogetherSettings({ enabled: false });
+  assert.equal(together.listParties().length, 0);
+});
+
+test('samen kijken: plek van de gastheer opschonen', () => {
+  assert.deepEqual(together.cleanState({ playing: 'ja', position: -5, sn: 1.5, offset: 3, behind: 1e9 }),
+    { playing: false, buffering: false, position: 0, sn: null, offset: null, behind: 3600 });
+  assert.deepEqual(together.cleanState({ playing: true, buffering: true, position: 61, sn: 40, offset: 2.25 }),
+    { playing: true, buffering: true, position: 61, sn: 40, offset: 2.25, behind: null });
+});

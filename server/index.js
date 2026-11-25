@@ -23,8 +23,11 @@ import { isDue, nextNightly } from './schedule.js';
 import { saveSubtitleSettings, SubtitleError, subtitleCues, subtitleSettings } from './subtitles.js';
 import { catchupUrl, isRefreshing, loadBackdrop, loadEpisodes, providerStatus, refreshSource } from './sources.js';
 import {
-  releaseViewer, serveBackdrop, serveFfmpegFile, serveLogo, serveSubtitleCues, serveSubtitleList, serveManifest, playbackStatus, servePassthrough, startPlayback, stopAllSessions,
+  joinSession, releaseViewer, serveBackdrop, serveFfmpegFile, serveLogo, serveSubtitleCues, serveSubtitleList, serveManifest, playbackStatus, servePassthrough, startPlayback, stopAllSessions,
 } from './stream.js';
+import {
+  createParty, hostReport, joinParty, leaveParty, listParties, releaseGuests, saveTogetherSettings, stopTogether, subscribe, TogetherError, togetherSettings,
+} from './together.js';
 import { parseMediaUrl, UpstreamError } from './upstream.js';
 import { downloadSettings, downloadStatus, saveDownloadSettings, serveDownload, startDownload, stopDownloads } from './downloads.js';
 
@@ -146,7 +149,7 @@ app.get('/api/state', (req, res) => {
   // Een tv die al was aangemeld voor deze versie, wordt zo meteen het eerste profiel.
   if (user && req.query.tv === '1') linkDevice(req, res, user.id);
   const profiles = req.query.tv === '1' ? deviceProfiles(deviceHash(req)).length : 0;
-  res.set('Cache-Control', 'no-store').json({ needsSetup: !hasUsers(), user: user && publicUser(user), subtitles: Boolean(user) && subtitleSettings().configured, downloads: Boolean(user) && downloadSettings().enabled, profiles, version: config.version });
+  res.set('Cache-Control', 'no-store').json({ needsSetup: !hasUsers(), user: user && publicUser(user), subtitles: Boolean(user) && subtitleSettings().configured, downloads: Boolean(user) && downloadSettings().enabled, together: Boolean(user) && togetherSettings().enabled, profiles, version: config.version });
 });
 
 // ---- Netwerk: thuisnetwerk of via een reverse proxy (beheerder)
@@ -973,6 +976,7 @@ app.post('/api/play/:id', requireUser, async (req, res) => {
   const item = db.prepare('SELECT * FROM items WHERE id = ?').get(Number(req.params.id));
   if (!item) return res.status(404).json({ error: 'Niet gevonden.' });
   try {
+    releaseGuests(cid);
     const started = await startPlayback(item, { mode, cid, start: Number(start) || 0, native: native === true });
     plays.set(cid, { user: req.user.username, device: deviceName(req), itemId: item.id, at: Date.now() });
     res.json(started);
@@ -1006,6 +1010,7 @@ app.post('/api/catchup/:id', requireUser, async (req, res) => {
   const url = catchupUrl(item, from, minutes);
   if (!url) return res.status(400).json({ error: 'Bij deze bron kun je niet terugkijken.' });
   try {
+    releaseGuests(cid);
     const started = await startPlayback({ ...item, type: 'catchup', url, catchupKey: `${from}-${minutes}` },
       { mode: mode === 'transcode' ? 'transcode' : 'remux', cid, start: 0, native: false });
     plays.set(cid, { user: req.user.username, device: deviceName(req), itemId: item.id, at: Date.now() });
@@ -1030,8 +1035,91 @@ app.post('/api/play-release', requireUser, (req, res) => {
   if (validCid(req.body?.cid)) {
     releaseViewer(req.body.cid);
     plays.delete(req.body.cid);
+    // Wie stopt met kijken, doet ook niet meer mee met samen kijken (de gastheer stopt het voor iedereen).
+    leaveParty(req.body.cid);
   }
   res.json({ ok: true });
+});
+
+// ---- Samen kijken (zie together.js). Staat standaard uit.
+app.get('/api/together-settings', requireAdmin, (req, res) => res.json(togetherSettings()));
+app.post('/api/together-settings', requireAdmin, (req, res) => res.json(saveTogetherSettings({ enabled: req.body?.enabled === true })));
+
+const togetherFail = (res, err) => {
+  if (err instanceof TogetherError || err instanceof UpstreamError) return res.status(409).json({ error: err.message });
+  console.error(`Samen kijken: ${err.code ?? err.name}`);
+  res.status(500).json({ error: 'Samen kijken lukt nu niet.' });
+};
+
+/**
+ * Het item zoals de meekijkers het zien. Bij terugkijken komen titel en zender van de gastheer
+ * (die staan niet als item in de database); dat is alleen tekst op het scherm.
+ */
+function togetherItem(body) {
+  const row = db.prepare('SELECT * FROM items WHERE id = ?').get(Number(body?.itemId));
+  if (!row) throw new TogetherError('Niet gevonden.');
+  const item = dto(row);
+  delete item.fav;
+  const { catchup } = body;
+  if (row.type === 'live' && Number.isFinite(catchup?.start) && Number.isFinite(catchup?.stop) && catchup.stop > catchup.start) {
+    Object.assign(item, {
+      type: 'catchup', catchup: { start: catchup.start, stop: catchup.stop },
+      name: text(body.name, 200) || item.name, group: text(body.group, 200) || item.group,
+    });
+  }
+  return item;
+}
+
+app.get('/api/together', requireUser, (req, res) => {
+  if (!togetherSettings().enabled) return res.json({ enabled: false, parties: [] });
+  const mine = validCid(req.query.cid) ? req.query.cid : null;
+  res.set('Cache-Control', 'no-store').json({
+    enabled: true,
+    parties: listParties().map(({ hostCid, ...p }) => ({ ...p, mine: hostCid === mine })),
+  });
+});
+
+app.post('/api/together', requireUser, (req, res) => {
+  if (!validCid(req.body?.cid)) return res.status(400).json({ error: 'Ongeldig verzoek.' });
+  try {
+    res.json(createParty({ user: req.user, cid: req.body.cid, device: deviceName(req), item: togetherItem(req.body) }));
+  } catch (err) {
+    togetherFail(res, err);
+  }
+});
+
+app.post('/api/together/:code/report', requireUser, (req, res) => {
+  const { cid, state, item } = req.body ?? {};
+  if (!validCid(cid)) return res.status(400).json({ error: 'Ongeldig verzoek.' });
+  try {
+    res.json(hostReport(req.params.code, cid, { state, item: item ? togetherItem(item) : undefined }));
+  } catch (err) {
+    togetherFail(res, err);
+  }
+});
+
+app.post('/api/together/:code/join', requireUser, async (req, res) => {
+  const { cid, native = false } = req.body ?? {};
+  if (!validCid(cid)) return res.status(400).json({ error: 'Ongeldig verzoek.' });
+  try {
+    const { party, sid } = joinParty(req.params.code, { user: req.user, cid, device: deviceName(req) });
+    const stream = sid ? await joinSession(sid, cid, { native: native === true }) : null;
+    if (stream) plays.set(cid, { user: req.user.username, device: deviceName(req), itemId: party.item.id, at: Date.now() });
+    res.json({ party, stream });
+  } catch (err) {
+    if (err.name === 'AbortError') return res.status(499).end();
+    togetherFail(res, err);
+  }
+});
+
+app.post('/api/together/leave', requireUser, (req, res) => {
+  if (validCid(req.body?.cid)) leaveParty(req.body.cid);
+  res.json({ ok: true });
+});
+
+app.get('/api/together/:code/events', requireUser, (req, res) => {
+  if (!validCid(req.query.cid)) return res.status(400).json({ error: 'Ongeldig verzoek.' });
+  subscribe(req.params.code, req.query.cid, req, res);
 });
 
 // ---- Status voor de beheerder: wie kijkt wat, hoe druk de server is, wat de provider telt
@@ -1192,6 +1280,7 @@ process.on('unhandledRejection', (err) => console.error(`Onverwachte fout: ${err
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
+    stopTogether();
     stopAllSessions();
     stopDownloads();
     server.close();
