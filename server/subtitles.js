@@ -112,7 +112,7 @@ async function connect(settings = readSetting(), test = false) {
 // ---- Zoeken en kiezen
 
 export const cleanTitle = (name) => String(name)
-  .replace(/^\s*[┃|[(][^┃|\])]{1,20}[┃|\])]\s*/u, '')
+  .replace(/^\s*(?:[┃|[(][^┃|\])]{1,20}[┃|\])]|[A-Z0-9][A-Z0-9 |-]{1,14}┃)\s*/u, '')
   .replace(/\(\s*\d{4}\s*\)|\b(19|20)\d{2}\b|\b(4K|HEVC|x265|FHD|UHD|HD|SD|MULTI|DUBB?|VOST\w*)\b/gi, '')
   .replace(/\s+-\s*$/, '')
   .replace(/\s{2,}/g, ' ')

@@ -190,6 +190,9 @@ test('Eén kaart per titel: zelfde film in andere talen herkennen', () => {
   assert.equal(titleKey('┃FR┃ Amélie'), titleKey('┃NL┃ Amelie'));
   assert.equal(titleKey('┃EN┃ Fast & Furious'), 'fast and furious');
   assert.deepEqual(['┃NL┃ NETFLIX', '┃EN┃ ACTION', '┃USA┃ X', '┃DE┃ KINO'].map(langRank), [0, 1, 1, 2]);
+  // Zonder streep vooraan, ook met kwaliteit in de code.
+  assert.deepEqual([...new Set(['NL┃ Gladiator II (2024)', 'FR-4K┃ Gladiator II', 'VO|STFR┃ Gladiator II - 2024', '┃DE┃ Gladiator II'].map(titleKey))], ['gladiator ii']);
+  assert.deepEqual(['NL┃ NETFLIX', 'EN┃ ACTION', 'USA┃ X', 'DE┃ KINO'].map(langRank), [0, 1, 1, 2]);
 });
 const { parseCues, cleanTitle, queryString } = await import('../server/subtitles.js');
 
@@ -206,6 +209,7 @@ test('Ondertitels: SRT en WebVTT inlezen', () => {
 test('Ondertitels: titel opschonen en zoekvolgorde', () => {
   assert.equal(cleanTitle('┃NL┃ Gladiator II (2024)'), 'Gladiator II');
   assert.equal(cleanTitle('┃USA┃ Oppenheimer 4K HEVC'), 'Oppenheimer');
+  assert.equal(cleanTitle('FR-4K┃ Warrior Kid (2026)'), 'Warrior Kid');
   assert.equal(queryString({ tmdb_id: '558449', languages: 'en,nl', query: '' }), 'languages=en%2Cnl&tmdb_id=558449');
 });
 const { ipAllowed, parseMediaUrl } = await import('../server/upstream.js');
@@ -311,6 +315,12 @@ test('Land uit de groepsnaam halen, in de vormen die providers gebruiken', async
     ['UK: News', 'UK', 'News'],
     ['┃US┃ LOCAL', 'USA', 'LOCAL'],
     ['┃NL┃', 'NL', '┃NL┃'],
+    // Vorm sinds november 2026, zonder streep vooraan.
+    ['NL┃ NETFLIX', 'NL', 'NETFLIX'],
+    ['USA┃ 24/7 | DRAMA', 'USA', '24/7 | DRAMA'],
+    ['CA EN┃ NEWS', 'CA EN', 'NEWS'],
+    ['HINDI┃ INDIA', 'HINDI', 'INDIA'],
+    ['PAKISTAN┃ DRAMA', 'PK', 'DRAMA'],
   ];
   for (const [group, code, rest] of cases) {
     assert.equal(countryOf(group), code, group);
@@ -330,14 +340,14 @@ test('Landenlijst: Nederland bovenaan, Overig onderaan, zelfde land samengevoegd
     { name: '┃ZZ┃ ONBEKEND', count: 1 },
   ];
   const list = countryList(groups);
-  assert.deepEqual(list.map((c) => c.label), ['Nederland', 'Albanië', 'Duitsland', 'Verenigde Staten', 'ZZ', 'Overig']);
+  assert.deepEqual(list.map((c) => c.label), ['Nederland', 'Verenigde Staten', 'Albanië', 'Duitsland', 'ZZ', 'Overig']);
   assert.equal(list[0].count, 6);
   assert.equal(list.find((c) => c.code === 'USA').count, 2);
   assert.deepEqual(groupsOfCountry(groups, 'USA'), ['┃US┃ A', '┃USA┃ B']);
   assert.deepEqual(firstCountryOnTop(groups).slice(0, 3).map((g) => g.name), ['┃NL┃ BASIS', '┃NL┃ SPORT', '┃AL┃ ALBANIA']);
-  // Films en series: Engelstalig direct na Nederland.
-  const films = countryList([...groups, { name: '┃EN┃ ACTION', count: 7 }], { englishSecond: true });
-  assert.deepEqual(films.map((c) => c.code).slice(0, 3), ['NL', 'EN', 'USA']);
+  // Engelstalig direct na Nederland, "Engelstalig" zelf voorop, ook bij live.
+  const films = countryList([...groups, { name: '┃EN┃ ACTION', count: 7 }, { name: 'UK┃ NEWS', count: 2 }]);
+  assert.deepEqual(films.map((c) => c.code).slice(0, 5), ['NL', 'EN', 'UK', 'USA', 'AL']);
   assert.equal(films.at(-1).code, 'OVERIG');
 });
 

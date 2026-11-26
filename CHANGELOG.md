@@ -2,6 +2,12 @@
 
 Alle versies van Kijkbox, de nieuwste bovenaan. Dezelfde tekst zie je na een update in Kijkbox zelf.
 
+## 1.7.2 (2026-11-26)
+
+- De landenkeuze bij Live, Films en Series is terug. De provider schrijft het land sinds kort anders ("NL┃ Netflix" in plaats van "┃NL┃ Netflix"); Kijkbox herkent nu allebei. Na de nachtelijke update staan dezelfde films in verschillende talen ook weer op één kaart.
+- Landen staan overal in dezelfde volgorde: Nederland bovenaan, dan Engelstalig, dan de rest op alfabet. "Alle landen" staat onderaan. Films en Series beginnen net als Live bij Nederland.
+- Bij live tv staat de knop "Volgende aflevering" niet meer in beeld.
+
 ## 1.7.1 (2026-11-25)
 
 - Samen kijken: stopt de gastheer, dan stopt het ook bij de meekijkers.

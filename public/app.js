@@ -98,8 +98,8 @@ function clock(seconds) {
   return s >= 3600 ? `${Math.floor(s / 3600)}:${parts.join(':')}` : `${Math.floor(s / 60)}:${parts[1]}`;
 }
 
-// Haalt de landcode weg uit namen: "┃NL┃ NPO 1 HD" wordt "NPO 1 HD". Het land staat al in de landkeuze.
-const COUNTRY_TAG = /^\s*[┃|[(]\s*[A-Z]{2,5}(?: [A-Z]{2})?\s*[┃|\]):]\s*/u;
+// Haalt de landcode weg uit namen: "┃NL┃ NPO 1 HD" en "NL┃ NPO 1 HD" worden "NPO 1 HD". Het land staat al in de landkeuze.
+const COUNTRY_TAG = /^\s*(?:[┃|[(]\s*[A-Z]{2,5}(?: [A-Z]{2})?\s*[┃|\]):]|[A-Z]{2,9}(?: [A-Z]{2})?\s*┃)\s*/u;
 function clean(text) {
   const original = String(text ?? '');
   return original.replace(COUNTRY_TAG, '') || original;
@@ -2126,8 +2126,8 @@ function chooseCountry(code) {
 /** Keuzelijst met landen. Zonder `current` en `onPick` hoort hij bij Live en de Gids. */
 function countrySelect(countries, onChange, current = liveFilter.country, onPick = chooseCountry) {
   const options = countries.map((c) => h('option', { value: c.code, selected: c.code === current }, `${c.label} (${c.count})`));
-  // Nederland blijft de bovenste keuze, ook boven "Alle landen".
-  options.splice(countries[0].code === 'NL' ? 1 : 0, 0, h('option', { value: '', selected: !current }, 'Alle landen'));
+  // Volgorde komt van de server: Nederland, Engelstalig, de rest op alfabet. "Alle landen" staat onderaan.
+  options.push(h('option', { value: '', selected: !current }, 'Alle landen'));
   return h('select', {
     'aria-label': 'Land',
     onchange: (e) => {
@@ -2458,7 +2458,8 @@ async function posterView(container, type, { returning = false } = {}) {
   const filter = browseState[type];
   const countryKey = `${COUNTRY_KEY}-${type}`;
   // Standaard alle landen: zoeken toont dan Nederlands bovenaan en Engels daarna.
-  if (filter.country === undefined) filter.country = localStorage.getItem(countryKey) ?? '';
+  // Standaard Nederland, zoals bij Live. Wie zelf iets kiest, houdt die keuze.
+  if (filter.country === undefined) filter.country = localStorage.getItem(countryKey) ?? 'NL';
   const countries = await api('GET', `/api/countries?type=${type}`).catch(() => []);
   const usable = countries.some((c) => c.code !== 'OVERIG') ? countries : [];
   if (!usable.some((c) => c.code === filter.country)) filter.country = '';
@@ -3883,6 +3884,8 @@ function tvUpdateTime() {
   tvPlay.hidden = live;
   for (const b of TV_SEEK_BUTTONS()) b.hidden = live || isGuest();
   tvControls.hidden = live && tvTogether.hidden;
+  // Volgende aflevering hoort niet bij live (sinds 1.7 kan de knoppenbalk bij live open staan).
+  tvNextEp.hidden = live || !tvNextShown;
   if (isGuest()) {
     tvHint.textContent = `Je kijkt mee met ${together.party?.host.username ?? 'de gastheer'} · Terug: stoppen`;
     if (live) return;
@@ -3904,7 +3907,6 @@ function tvUpdateTime() {
   }
   tvPlay.replaceChildren(icon(video.paused ? 'play' : 'pause', video.paused));
   tvPlay.setAttribute('aria-label', video.paused ? 'Afspelen' : 'Pauze');
-  tvNextEp.hidden = !tvNextShown;
   if (!isGuest()) tvHint.textContent = 'Terug: stoppen';
 }
 

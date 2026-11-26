@@ -769,7 +769,7 @@ app.get('/api/highlights', requireUser, (req, res) => {
 app.get('/api/countries', requireUser, (req, res) => {
   const type = TYPES.has(req.query.type) ? req.query.type : 'live';
   const hidden = new Set(hiddenGroups(req.user.id, type));
-  res.json(countryList(groupsByType(type).filter((g) => !hidden.has(g.name)), { englishSecond: type !== 'live' }));
+  res.json(countryList(groupsByType(type).filter((g) => !hidden.has(g.name))));
 });
 
 // ---- Verbergen: per account landen of categorieën uitzetten
@@ -777,7 +777,7 @@ app.get('/api/hidden', requireUser, (req, res) => {
   const rows = hiddenRows(req.user.id);
   const all = ['live', 'movie', 'series'].flatMap((type) => groupsByType(type));
   res.json({
-    countries: countryList(all, { englishSecond: true }).filter((c) => c.code !== FIRST_COUNTRY),
+    countries: countryList(all).filter((c) => c.code !== FIRST_COUNTRY),
     hiddenCountries: rows.filter((r) => r.kind === 'country').map((r) => r.value),
     hiddenGroups: rows.filter((r) => r.kind === 'group').map((r) => r.value),
   });

@@ -2,7 +2,8 @@
 // "┃DE┃Gladiator II", "┃USA┃ Gladiator II 4K"), zodat die op één kaart komen met een taalkeuze.
 import { countryOf, ENGLISH, FIRST_COUNTRY } from './countries.js';
 
-const PREFIX = /^\s*(?:[┃|[(][^┃|\])]{1,20}[┃|\])]\s*)+/u;
+// Ook zonder streep vooraan: "FR┃ Titel", "FR-4K┃ Titel", "VO|STFR┃ Titel".
+const PREFIX = /^\s*(?:(?:[┃|[(][^┃|\])]{1,20}[┃|\])]|[A-Z0-9][A-Z0-9 |-]{1,14}┃)\s*)+/u;
 const NOISE = /\b(4k|uhd|fhd|hd|sd|hevc|x265|h265|x264|multi|dubb?ed|dubb|vostfr|vost|subbed|nl subs?|3d|imax|remastered|extended|director'?s cut)\b/gi;
 
 /** Vergelijkbare titel: zonder landcode, jaar, kwaliteit en leestekens, in kleine letters. */
