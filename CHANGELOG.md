@@ -2,6 +2,10 @@
 
 Alle versies van Kijkbox, de nieuwste bovenaan. Dezelfde tekst zie je na een update in Kijkbox zelf.
 
+## 1.7.3 (2026-11-26)
+
+- Live: lopen beeld en geluid uit elkaar (gezien na een tijdsprong bij de provider: het geluid liep 50 seconden voor), dan merkt Kijkbox dat binnen enkele seconden en zet het omzetten opnieuw op gang. Je ziet even een hapering, daarna is het weer gelijk.
+
 ## 1.7.2 (2026-11-26)
 
 - De landenkeuze bij Live, Films en Series is terug. De provider schrijft het land sinds kort anders ("NL┃ Netflix" in plaats van "┃NL┃ Netflix"); Kijkbox herkent nu allebei. Na de nachtelijke update staan dezelfde films in verschillende talen ook weer op één kaart.

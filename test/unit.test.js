@@ -560,3 +560,24 @@ test('samen kijken: plek van de gastheer opschonen', () => {
   assert.deepEqual(together.cleanState({ playing: true, buffering: true, position: 61, sn: 40, offset: 2.25 }),
     { playing: true, buffering: true, position: 61, sn: 40, offset: 2.25, behind: null });
 });
+
+test('Live: meten of beeld en geluid uit elkaar lopen', async () => {
+  const { streamStarts, avDrift } = await import('../server/tsdedupe.js');
+  // Eén TS-pakket met een PES-kop met alleen PTS (in 90 kHz-tikken).
+  const pes = (pid, streamId, pts) => {
+    const p = Buffer.alloc(188, 0xff);
+    p[0] = 0x47; p[1] = 0x40 | (pid >> 8); p[2] = pid & 0xff; p[3] = 0x10;
+    p.set([0, 0, 1, streamId, 0, 0, 0x80, 0x80, 5], 4);
+    p[13] = 0x21 | (Math.floor(pts / 2 ** 30) & 7) << 1;
+    p[14] = (pts >> 22) & 0xff; p[15] = ((pts >> 14) & 0xfe) | 1; p[16] = (pts >> 7) & 0xff; p[17] = ((pts << 1) & 0xfe) | 1;
+    return p;
+  };
+  const inSync = Buffer.concat([pes(256, 0xe0, 90000 * 100), pes(257, 0xc0, 90000 * 100 + 900)]);
+  assert.deepEqual(streamStarts(inSync), { video: 9000000, audio: 9000900 });
+  assert.ok(Math.abs(avDrift(streamStarts(inSync)) - 0.01) < 1e-9);
+  const apart = Buffer.concat([pes(257, 0xc0, 90000 * 2855), pes(256, 0xe0, 90000 * 2805.5)]);
+  assert.equal(avDrift(streamStarts(apart)), 49.5);
+  // Over het overlopen van de teller heen (~26,5 uur): klein verschil, geen 26 uur.
+  assert.ok(Math.abs(avDrift({ video: 2 ** 33 - 90000, audio: 90000 }) - 2) < 1e-9);
+  assert.equal(avDrift({ video: null, audio: 5 }), 0);
+});

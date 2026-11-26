@@ -37,6 +37,36 @@ export function readTimestamp(p, off) {
   return null;
 }
 
+/**
+ * Eerste tijdstempel van video en van audio in een stuk MPEG-TS (bijvoorbeeld een HLS-segment), in
+ * seconden. Zo is te zien of beeld en geluid nog bij elkaar horen.
+ */
+export function streamStarts(buf) {
+  let video = null;
+  let audio = null;
+  for (let i = 0; i + PACKET <= buf.length && (video === null || audio === null); i += PACKET) {
+    if (buf[i] !== 0x47 || !(buf[i + 1] & 0x40)) continue;
+    const afc = (buf[i + 3] >> 4) & 3;
+    if (!(afc & 1)) continue;
+    const p = buf.subarray(i, i + PACKET);
+    const off = afc & 2 ? 5 + p[4] : 4;
+    const stamp = readTimestamp(p, off);
+    if (stamp === null) continue;
+    const id = p[off + 3];
+    if (id >= 0xe0 && id <= 0xef) video ??= stamp;
+    else if (id >= 0xc0 && id <= 0xdf) audio ??= stamp;
+  }
+  return { video, audio };
+}
+
+/** Hoeveel seconden het geluid voor (+) of achter (-) loopt op het beeld, met overlopen van de teller. */
+export function avDrift({ video, audio }) {
+  if (video === null || audio === null) return 0;
+  let d = (((audio - video) % WRAP) + WRAP) % WRAP;
+  if (d > WRAP / 2) d -= WRAP;
+  return d / 90000;
+}
+
 export class TsDedupe {
   /**
    * resetAfterMs: zo lang alleen oude tijdstempels? Dan is de tijdlijn van de bron echt opnieuw

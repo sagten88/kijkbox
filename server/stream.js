@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { seal, unseal } from './auth.js';
 import { config } from './config.js';
 import { db } from './db.js';
-import { TsDedupe } from './tsdedupe.js';
+import { avDrift, streamStarts, TsDedupe } from './tsdedupe.js';
 import { parseCues } from './subtitles.js';
 import { assertHostAllowed, open, readText, UpstreamError } from './upstream.js';
 
@@ -342,6 +342,11 @@ function launch(session) {
   let head = '';
   proc.stderr.on('data', (chunk) => {
     tail = (tail + chunk).slice(-4000);
+    // Tijdsprongen in de bron vastleggen: daar raken beeld en geluid soms door uit elkaar.
+    if (session.live && /discontinuity/i.test(chunk) && Date.now() - (session.loggedJump ?? 0) > 60000) {
+      session.loggedJump = Date.now();
+      console.log(`Live item ${session.item.id}: tijdsprong in de bron (${describe(chunk).slice(0, 200)})`);
+    }
     if (checked) return;
     head = (head + chunk).slice(0, 64000);
     // Pas als ffmpeg alle sporen van de invoer heeft genoemd ("Stream mapping") beslissen.
@@ -435,6 +440,47 @@ setInterval(() => {
     if (!session.viewers.size) closeSession(session);
   }
 }, 5000).unref();
+
+// ---- Live: beeld en geluid gelijk houden
+//
+// Springt de tijd in de bron van de provider (bijvoorbeeld na een nieuwe verbinding), dan kan ffmpeg
+// het geluid een andere kant op zetten dan het beeld. Ze lopen dan blijvend uit elkaar (gezien: 50 s).
+// Daarom wordt elk nieuw segment gemeten; lopen ze in twee segmenten na elkaar meer dan DRIFT_LIMIT
+// uit elkaar, dan start ffmpeg opnieuw. De kijker ziet even een hapering, daarna is het weer gelijk.
+const DRIFT_LIMIT = 1.5;
+
+async function checkDrift(session) {
+  if (session.closed || !session.proc || session.proc.exitCode !== null || session.checkingDrift) return;
+  session.checkingDrift = true;
+  try {
+    const list = await fs.promises.readFile(path.join(session.dir, 'index.m3u8'), 'utf8').catch(() => '');
+    const last = list.trim().split('\n').filter((line) => line && !line.startsWith('#')).pop();
+    if (!last || last === session.driftChecked) return;
+    session.driftChecked = last;
+    const drift = avDrift(streamStarts(await fs.promises.readFile(path.join(session.dir, last))));
+    session.driftCount = Math.abs(drift) > DRIFT_LIMIT ? (session.driftCount ?? 0) + 1 : 0;
+    if (session.driftCount < 2 || Date.now() - (session.driftRestart ?? 0) < 60000) return;
+    session.driftCount = 0;
+    // Helpt opnieuw starten niet (de bron zelf loopt uit elkaar), dan niet blijven herstarten.
+    if ((session.driftRestarts ?? 0) >= 3) {
+      if (!session.driftGaveUp) console.log(`Live item ${session.item.id}: geluid en beeld blijven ${drift.toFixed(1)} s uit elkaar, ook na opnieuw starten; de bron zelf loopt niet gelijk`);
+      session.driftGaveUp = true;
+      return;
+    }
+    session.driftRestarts = (session.driftRestarts ?? 0) + 1;
+    session.driftRestart = Date.now();
+    console.log(`Live item ${session.item.id}: geluid liep ${drift.toFixed(1)} s ${drift > 0 ? 'voor' : 'achter'} op het beeld, omzetten opnieuw gestart`);
+    session.proc.kill('SIGKILL');
+  } catch {
+    /* segment al weg of nog niet compleet: volgende keer opnieuw */
+  } finally {
+    session.checkingDrift = false;
+  }
+}
+
+setInterval(() => {
+  for (const session of sessions.values()) if (session.live) checkDrift(session);
+}, LIVE_SEGMENT * 1000).unref();
 
 export const stopAllSessions = () => {
   for (const session of sessions.values()) closeSession(session);
